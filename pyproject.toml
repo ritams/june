@@ -1,0 +1,24 @@
+[project]
+name = "june"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "apscheduler",
+    "fastapi",
+    "google-auth",
+    "gspread",
+    "httpx",
+    "python-dotenv",
+    "uvicorn",
+    "yfinance",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

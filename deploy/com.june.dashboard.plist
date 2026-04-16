@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.june.dashboard</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/ritam/workspace/services/daniel/june/scripts/run-dashboard.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/ritam/workspace/services/daniel/june</string>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/ritam/workspace/services/daniel/june/runtime/launchd.stdout.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/ritam/workspace/services/daniel/june/runtime/launchd.stderr.log</string>
+</dict>
+</plist>

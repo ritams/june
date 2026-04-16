@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>June | Business Cycle</title>
+    <link rel="stylesheet" href="/static/app.css" />
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body data-dashboard="business-cycle">
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="eyebrow">June dashboard</div>
+          <h1 class="title">Cycle read</h1>
+        </div>
+        <div class="control-cluster">
+          <nav class="nav">
+            <a href="/liquidity">Liquidity</a>
+            <a class="active" href="/business-cycle">Business Cycle</a>
+          </nav>
+        </div>
+      </header>
+
+      <main class="dashboard-layout">
+        <section class="hero">
+          <div class="hero-story">
+            <div class="signal-row">
+              <div class="signal-badge" data-signal-badge>Loading</div>
+              <div class="signal-note">Official ISM + FRED</div>
+            </div>
+            <div class="hero-copy">
+              <div class="eyebrow eyebrow-inverse">Live dashboard</div>
+              <h2 data-signal-heading>Business Cycle</h2>
+              <p data-signal-summary>Waiting for live data.</p>
+            </div>
+          </div>
+          <div class="hero-side">
+            <article class="meta-card">
+              <p class="meta-description">Economic acceleration versus stress across PMI, curve shape, credit, labor, and trade momentum.</p>
+              <dl>
+                <div>
+                  <dt>Last update</dt>
+                  <dd data-updated-at>Loading</dd>
+                </div>
+                <div>
+                  <dt>Cadence</dt>
+                  <dd>15-minute dashboard refresh</dd>
+                </div>
+                <div class="meta-span">
+                  <dt>Scope</dt>
+                  <dd>Official ISM, treasury spreads, high-yield credit, claims, and export momentum.</dd>
+                </div>
+              </dl>
+            </article>
+            <article class="meta-bar">
+              <span class="mini-chip">Official ISM</span>
+              <span class="mini-chip">FRED</span>
+              <span class="mini-chip">Cycle alerts</span>
+              <span class="mini-chip">Telegram ready</span>
+            </article>
+          </div>
+        </section>
+
+        <section class="dashboard-panel">
+          <div class="panel-header">
+            <div>
+              <div class="eyebrow">Dashboard</div>
+              <h3 data-panel-title>Business Cycle</h3>
+            </div>
+            <div class="panel-status" data-panel-status>Loading</div>
+          </div>
+          <div class="metric-grid" data-metrics></div>
+        </section>
+
+        <section class="footer-panel">
+          <div class="footer-copy">
+            <div class="eyebrow">Operations</div>
+            <p>Refresh the snapshot, send the current macro card, and confirm what is wired without leaving the page.</p>
+          </div>
+          <div class="actions">
+            <button class="button" type="button" data-refresh>Refresh now</button>
+            <button class="button secondary" type="button" data-send-card>Send daily card</button>
+          </div>
+          <div class="footer-grid" data-integrations></div>
+          <div class="notice" data-notice></div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

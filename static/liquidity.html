@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>June | Liquidity</title>
+    <link rel="stylesheet" href="/static/app.css" />
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body data-dashboard="liquidity">
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="eyebrow">June dashboard</div>
+          <h1 class="title">Macro pulse</h1>
+        </div>
+        <div class="control-cluster">
+          <nav class="nav">
+            <a class="active" href="/liquidity">Liquidity</a>
+            <a href="/business-cycle">Business Cycle</a>
+          </nav>
+        </div>
+      </header>
+
+      <main class="dashboard-layout">
+        <section class="hero">
+          <div class="hero-story">
+            <div class="signal-row">
+              <div class="signal-badge" data-signal-badge>Loading</div>
+              <div class="signal-note">Rule-based read</div>
+            </div>
+            <div class="hero-copy">
+              <div class="eyebrow eyebrow-inverse">Live dashboard</div>
+              <h2 data-signal-heading>Liquidity</h2>
+              <p data-signal-summary>Waiting for live data.</p>
+            </div>
+          </div>
+          <div class="hero-side">
+            <article class="meta-card">
+              <p class="meta-description">Live macro data from FRED and yfinance, scored into one clean risk read instead of five disconnected tabs.</p>
+              <dl>
+                <div>
+                  <dt>Last update</dt>
+                  <dd data-updated-at>Loading</dd>
+                </div>
+                <div>
+                  <dt>Cadence</dt>
+                  <dd>15-minute live pull</dd>
+                </div>
+                <div class="meta-span">
+                  <dt>Scope</dt>
+                  <dd>Dollar, money supply, treasury plumbing, and Fed balance-sheet pressure.</dd>
+                </div>
+              </dl>
+            </article>
+            <article class="meta-bar">
+              <span class="mini-chip">FRED</span>
+              <span class="mini-chip">yfinance</span>
+              <span class="mini-chip">Telegram ready</span>
+              <span class="mini-chip">Manual card send</span>
+            </article>
+          </div>
+        </section>
+
+        <section class="dashboard-panel">
+          <div class="panel-header">
+            <div>
+              <div class="eyebrow">Dashboard</div>
+              <h3 data-panel-title>Liquidity</h3>
+            </div>
+            <div class="panel-status" data-panel-status>Loading</div>
+          </div>
+          <div class="metric-grid" data-metrics></div>
+        </section>
+
+        <section class="footer-panel">
+          <div class="footer-copy">
+            <div class="eyebrow">Operations</div>
+            <p>Pull a fresh read, push the current card to Telegram, and verify which integrations are live from the same strip.</p>
+          </div>
+          <div class="actions">
+            <button class="button" type="button" data-refresh>Refresh now</button>
+            <button class="button secondary" type="button" data-send-card>Send daily card</button>
+          </div>
+          <div class="footer-grid" data-integrations></div>
+          <div class="notice" data-notice></div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
