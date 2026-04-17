@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>June | Macro Dashboard</title>
+    <link rel="stylesheet" href="/static/app.css" />
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="eyebrow">June dashboard</div>
+          <h1 class="title">Macro dashboard</h1>
+          <p class="subtitle">One signal at the top, then liquidity and business-cycle inputs underneath it.</p>
+        </div>
+      </header>
+
+      <main class="dashboard-layout">
+        <section class="hero">
+          <div class="hero-story">
+            <div class="signal-row">
+              <div class="signal-badge" data-signal-badge>Loading</div>
+              <div class="signal-note">Full macro build</div>
+            </div>
+            <div class="hero-copy">
+              <div class="eyebrow eyebrow-inverse">Top signal</div>
+              <h2 data-signal-heading>Loading</h2>
+              <p data-signal-summary>Waiting for live data.</p>
+              <p class="signal-action" data-signal-action></p>
+            </div>
+          </div>
+          <div class="hero-side">
+            <article class="meta-card">
+              <p class="meta-description">Liquidity, funding, cycle, and trade inputs scored into one live risk read instead of split dashboards.</p>
+              <dl>
+                <div>
+                  <dt>Last update</dt>
+                  <dd data-updated-at>Loading</dd>
+                </div>
+                <div>
+                  <dt>Cadence</dt>
+                  <dd>15-minute live refresh</dd>
+                </div>
+                <div class="meta-span">
+                  <dt>Scope</dt>
+                  <dd>DXY, M2, RRP, TGA, Fed balance sheet, ISM, curve, credit, claims, Korean exports, and the Global M2 proxy.</dd>
+                </div>
+              </dl>
+            </article>
+            <article class="meta-bar">
+              <span class="mini-chip">FRED</span>
+              <span class="mini-chip">yfinance</span>
+              <span class="mini-chip">Perplexity optional</span>
+              <span class="mini-chip">Telegram + Sheets</span>
+            </article>
+          </div>
+        </section>
+
+        <section class="dashboard-panel">
+          <div class="panel-header">
+            <div>
+              <div class="eyebrow">Section 1</div>
+              <h3>Liquidity</h3>
+              <p class="panel-copy" data-liquidity-summary>Waiting for live data.</p>
+            </div>
+            <div class="panel-status" data-liquidity-status>Loading</div>
+          </div>
+          <div class="metric-grid" data-liquidity-metrics></div>
+        </section>
+
+        <section class="dashboard-panel">
+          <div class="panel-header">
+            <div>
+              <div class="eyebrow">Section 2</div>
+              <h3>Business Cycle</h3>
+              <p class="panel-copy" data-cycle-summary>Waiting for live data.</p>
+            </div>
+            <div class="panel-status" data-cycle-status>Loading</div>
+          </div>
+          <div class="metric-grid" data-cycle-metrics></div>
+        </section>
+
+        <section class="footer-panel">
+          <div class="footer-copy">
+            <div class="eyebrow">Operations</div>
+            <p>Refresh the live snapshot, push the current macro card, and verify which integrations are active.</p>
+          </div>
+          <div class="actions">
+            <button class="button" type="button" data-refresh>Refresh now</button>
+            <button class="button secondary" type="button" data-send-card>Send daily card</button>
+          </div>
+          <div class="footer-grid" data-integrations></div>
+          <div class="notice" data-notice></div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

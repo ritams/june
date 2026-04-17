@@ -11,6 +11,7 @@ from app.models import Dashboard, Metric
 from app.services.fred import FredClient, Observation
 from app.services.ism import ISMClient
 from app.services.market import MarketClient
+from app.services.perplexity import PerplexityClient
 
 
 SERIES_IDS = {
@@ -46,29 +47,61 @@ def fmt_trillions(value: float) -> str:
     return f"${value:.1f}T"
 
 
-def summarize_section(positive: int, negative: int, section: str) -> tuple[str, str]:
+def metric_direction(change: float | None, tolerance: float = 0.0) -> str:
+    if change is None:
+        return "unknown"
+    if change > tolerance:
+        return "rising"
+    if change < -tolerance:
+        return "falling"
+    return "flat"
+
+
+def summarize_section(metrics: dict[str, Metric], section: str) -> tuple[str, str, str]:
     if section == "liquidity":
-        if positive >= 4 and negative == 0:
-            return "EXPANDING", "positive"
-        if negative >= 3:
-            return "CONTRACTING", "negative"
-        return "MIXED", "neutral"
-    if positive >= 4 and negative <= 1:
-        return "MID-EXPANSION", "positive"
-    if negative >= 3:
-        return "SLOWDOWN", "negative"
-    return "TRANSITION", "neutral"
+        m2_mom = metrics["m2"].details.get("mom")
+        rrp_direction = metrics["rrp"].details.get("direction")
+        dxy = metrics["dxy"].raw_value
+        if m2_mom is not None and m2_mom > 0.3 and rrp_direction == "falling" and dxy is not None and dxy < 101:
+            return "EXPANDING", "positive", "Liquidity is expanding across money supply, funding, and dollar conditions."
+        if (dxy is not None and dxy > 104) or (m2_mom is not None and m2_mom < 0):
+            return "CONTRACTING", "negative", "Liquidity is tightening and becoming a headwind for risk assets."
+        return "NEUTRAL", "neutral", "Liquidity inputs are mixed, so the backdrop is not fully supportive."
+
+    ism = metrics["ism_pmi"].raw_value
+    yield_curve = metrics["yield_curve"].raw_value
+    spreads = metrics["credit_spreads"].raw_value
+    if ism is not None and yield_curve is not None and spreads is not None:
+        if ism > 52 and yield_curve > 0 and spreads < 350:
+            return "EXPANSION", "positive", "The cycle remains in expansion with supportive manufacturing, curve, and credit signals."
+        if ism > 50 and spreads < 450:
+            return "LATE CYCLE", "neutral", "Growth is still positive, but conditions are no longer cleanly early-cycle."
+        if ism < 50 or spreads > 500:
+            return "CONTRACTION", "negative", "Cycle indicators are deteriorating into a defensive macro regime."
+    return "TRANSITION", "neutral", "Cycle indicators are at an inflection rather than in a confirmed regime."
 
 
-def overall_signal(liquidity: Dashboard, cycle: Dashboard) -> tuple[str, str, str]:
-    liq_positive, liq_negative = liquidity.counts()
-    cyc_positive, cyc_negative = cycle.counts()
-    score = (liq_positive + cyc_positive) - (liq_negative + cyc_negative)
-    if liq_negative >= 3 or cyc_negative >= 3 or score < 0:
-        return "RISK OFF", "negative", "Stay defensive until liquidity and cycle improve."
-    if liq_positive >= 3 and cyc_positive >= 3 and score >= 3:
-        return "RISK ON", "positive", "Add on weakness while both dashboards stay supportive."
-    return "RISK OFF", "negative", "Conditions are mixed, so default to defense."
+def overall_signal(liquidity: Dashboard, cycle: Dashboard) -> tuple[str, str, str, str]:
+    if liquidity.status == "EXPANDING" and cycle.status == "EXPANSION":
+        return (
+            "RISK ON",
+            "positive",
+            "Liquidity and cycle are aligned in a supportive regime.",
+            "Add to high conviction positions on dips.",
+        )
+    if liquidity.status == "CONTRACTING" or cycle.status == "CONTRACTION":
+        return (
+            "RISK OFF",
+            "negative",
+            "Liquidity or cycle has moved into a defensive regime.",
+            "Reduce risk and protect capital.",
+        )
+    return (
+        "SELECTIVE",
+        "neutral",
+        "Liquidity and cycle are not fully aligned.",
+        "Stay selective until both dashboards confirm.",
+    )
 
 
 class DashboardService:
@@ -77,6 +110,7 @@ class DashboardService:
         self.fred = FredClient(settings.fred_api_key)
         self.ism = ISMClient()
         self.market = MarketClient()
+        self.perplexity = PerplexityClient(settings.perplexity_api_key, settings.perplexity_model)
         self.lock = threading.Lock()
         self.cache: dict | None = None
         self.cache_timestamp = 0.0
@@ -97,20 +131,27 @@ class DashboardService:
     def _build_snapshot(self) -> dict:
         liquidity = self._build_liquidity_dashboard()
         cycle = self._build_cycle_dashboard()
-        signal, signal_tone, signal_summary = overall_signal(liquidity, cycle)
+        signal, signal_tone, signal_summary, signal_action = overall_signal(liquidity, cycle)
         generated_at = self._now_display().isoformat()
+        dashboards = {
+            liquidity.slug: liquidity.to_dict(),
+            cycle.slug: cycle.to_dict(),
+        }
         return {
             "generated_at": generated_at,
-            "signal": {"label": signal, "tone": signal_tone, "summary": signal_summary},
-            "dashboards": {
-                "liquidity": liquidity.to_dict(),
-                "business-cycle": cycle.to_dict(),
+            "signal": {
+                "label": signal,
+                "tone": signal_tone,
+                "summary": signal_summary,
+                "action": signal_action,
             },
+            "dashboards": dashboards,
+            "sections": list(dashboards.values()),
             "integrations": {
                 "telegram": self.settings.telegram_enabled,
                 "google_sheets": self.settings.sheets_enabled,
-                "ism_configured": True,
-                "global_m2_proxy_configured": bool(self.settings.global_m2_proxy_series_id),
+                "perplexity": self.perplexity.enabled,
+                "global_m2_proxy": True,
             },
         }
 
@@ -121,11 +162,18 @@ class DashboardService:
             self._safe_metric("rrp", "Reverse Repo", self._build_rrp_metric),
             self._safe_metric("tga", "TGA", self._build_tga_metric),
             self._safe_metric("fed_balance_sheet", "Fed Balance Sheet", self._build_fed_balance_sheet_metric),
+            self._safe_metric("global_m2_proxy", "Global M2 Proxy", self._build_global_m2_proxy_metric),
         ]
-        positive = sum(metric.status == "positive" for metric in metrics)
-        negative = sum(metric.status == "negative" for metric in metrics)
-        status, tone = summarize_section(positive, negative, "liquidity")
-        return Dashboard(slug="liquidity", title="Liquidity", status=status, tone=tone, metrics=metrics)
+        metrics_by_key = {metric.key: metric for metric in metrics}
+        status, tone, summary = summarize_section(metrics_by_key, "liquidity")
+        return Dashboard(
+            slug="liquidity",
+            title="Liquidity",
+            status=status,
+            tone=tone,
+            summary=summary,
+            metrics=metrics,
+        )
 
     def _build_cycle_dashboard(self) -> Dashboard:
         metrics = [
@@ -135,10 +183,16 @@ class DashboardService:
             self._safe_metric("jobless_claims", "Jobless Claims", self._build_jobless_claims_metric),
             self._safe_metric("korean_exports", "Korean Exports", self._build_korean_exports_metric),
         ]
-        positive = sum(metric.status == "positive" for metric in metrics)
-        negative = sum(metric.status == "negative" for metric in metrics)
-        status, tone = summarize_section(positive, negative, "cycle")
-        return Dashboard(slug="business-cycle", title="Business Cycle", status=status, tone=tone, metrics=metrics)
+        metrics_by_key = {metric.key: metric for metric in metrics}
+        status, tone, summary = summarize_section(metrics_by_key, "cycle")
+        return Dashboard(
+            slug="business-cycle",
+            title="Business Cycle",
+            status=status,
+            tone=tone,
+            summary=summary,
+            metrics=metrics,
+        )
 
     def _now_display(self) -> datetime:
         return datetime.now(ZoneInfo(self.settings.display_timezone))
@@ -156,33 +210,37 @@ class DashboardService:
                 display_value="n/a",
                 status="neutral",
                 summary="Source temporarily unavailable",
-                secondary=str(exc)[:140],
+                secondary=str(exc)[:160],
                 raw_value=None,
                 updated_at=None,
+                details={},
             )
 
     def _build_dxy_metric(self) -> Metric:
         quote = self.market.dxy()
         pct_change = safe_pct_change(quote.current, quote.previous)
+        direction = metric_direction(pct_change)
         if quote.current < 101 or (pct_change is not None and pct_change < 0):
             status = "positive"
-            summary = "Dollar is easing"
+            summary = "Dollar is weakening, which is supportive for risk assets."
         elif quote.current > 104 or (pct_change is not None and pct_change > 0):
             status = "negative"
-            summary = "Dollar strength is a headwind"
+            summary = "Dollar strength is draining liquidity."
         else:
             status = "neutral"
-            summary = "Dollar is range-bound"
-        secondary = f"{fmt_change(pct_change)} vs prior print"
+            summary = "Dollar is range-bound."
         return Metric(
             key="dxy",
             label="DXY",
             display_value=f"{quote.current:.2f}",
             status=status,
             summary=summary,
-            secondary=secondary,
+            secondary=f"{fmt_change(pct_change)} vs prior print",
             raw_value=quote.current,
             updated_at=quote.updated_at,
+            source="yfinance",
+            cadence="15 minutes",
+            details={"pct_change": pct_change, "direction": direction},
         )
 
     def _build_m2_metric(self) -> Metric:
@@ -190,19 +248,23 @@ class DashboardService:
         current = observations[0].value
         previous = observations[1].value if len(observations) > 1 else None
         last_year = observations[12].value if len(observations) > 12 else None
+        current_trillions = current / 1000
         mom = safe_pct_change(current, previous)
         yoy = safe_pct_change(current, last_year)
         status = "positive" if (mom or 0) > 0 else "negative"
-        summary = "Money supply is expanding" if status == "positive" else "Money supply is not expanding"
+        summary = "Money supply is expanding month over month." if status == "positive" else "Money supply is flat to shrinking."
         return Metric(
             key="m2",
             label="US M2",
-            display_value=fmt_trillions(current / 1000),
+            display_value=fmt_trillions(current_trillions),
             status=status,
             summary=summary,
             secondary=f"{fmt_change(mom)} MoM | {fmt_change(yoy)} YoY",
-            raw_value=current,
+            raw_value=current_trillions,
             updated_at=self._latest_date(observations),
+            source="FRED",
+            cadence="Weekly on release",
+            details={"mom": mom, "yoy": yoy, "current_trillions": current_trillions},
         )
 
     def _build_rrp_metric(self) -> Metric:
@@ -210,15 +272,16 @@ class DashboardService:
         current = observations[0].value
         previous = observations[1].value if len(observations) > 1 else None
         change = None if previous is None else current - previous
-        if change is not None and change < 0:
+        direction = metric_direction(change)
+        if direction == "falling":
             status = "positive"
-            summary = "RRP is draining into markets"
-        elif change is not None and change > 0:
+            summary = "RRP is draining and releasing liquidity back into markets."
+        elif direction == "rising":
             status = "negative"
-            summary = "RRP is rebuilding"
+            summary = "RRP is rebuilding and absorbing liquidity."
         else:
             status = "neutral"
-            summary = "RRP is flat"
+            summary = "RRP is broadly flat."
         return Metric(
             key="rrp",
             label="Reverse Repo",
@@ -228,6 +291,9 @@ class DashboardService:
             secondary=f"{fmt_change(change, suffix='B', precision=0)} vs prior day" if change is not None else None,
             raw_value=current,
             updated_at=self._latest_date(observations),
+            source="FRED",
+            cadence="Daily",
+            details={"change": change, "direction": direction},
         )
 
     def _build_tga_metric(self) -> Metric:
@@ -235,15 +301,16 @@ class DashboardService:
         current = observations[0].value / 1000
         previous = observations[1].value / 1000 if len(observations) > 1 else None
         change = None if previous is None else current - previous
-        if change is not None and change < 0:
+        direction = metric_direction(change)
+        if direction == "falling":
             status = "positive"
-            summary = "Treasury is spending down cash"
-        elif change is not None and change > 0:
+            summary = "Treasury is spending down cash into the economy."
+        elif direction == "rising":
             status = "negative"
-            summary = "Treasury cash balance is rebuilding"
+            summary = "Treasury cash balance is rebuilding."
         else:
             status = "neutral"
-            summary = "Treasury cash is stable"
+            summary = "Treasury cash is stable."
         return Metric(
             key="tga",
             label="TGA",
@@ -253,6 +320,9 @@ class DashboardService:
             secondary=f"{fmt_change(change, suffix='B', precision=0)} vs prior week" if change is not None else None,
             raw_value=current,
             updated_at=self._latest_date(observations),
+            source="FRED",
+            cadence="Weekly",
+            details={"change": change, "direction": direction},
         )
 
     def _build_fed_balance_sheet_metric(self) -> Metric:
@@ -260,15 +330,12 @@ class DashboardService:
         current = observations[0].value / 1_000_000
         previous = observations[1].value / 1_000_000 if len(observations) > 1 else None
         change = None if previous is None else current - previous
-        if change is not None and change > 0.03:
-            status = "positive"
-            summary = "Fed balance sheet is expanding"
-        elif change is not None and change < -0.03:
+        if change is not None and change < 0:
             status = "negative"
-            summary = "Fed balance sheet is shrinking"
+            summary = "Fed balance sheet is shrinking."
         else:
-            status = "neutral"
-            summary = "Fed balance sheet is steady"
+            status = "positive"
+            summary = "Fed balance sheet is stable to expanding."
         return Metric(
             key="fed_balance_sheet",
             label="Fed Balance Sheet",
@@ -278,22 +345,91 @@ class DashboardService:
             secondary=f"{fmt_change(change, suffix='T', precision=2)} vs prior week" if change is not None else None,
             raw_value=current,
             updated_at=self._latest_date(observations),
+            source="FRED",
+            cadence="Weekly on release",
+            details={"change": change},
+        )
+
+    def _build_global_m2_proxy_metric(self) -> Metric:
+        m2_observations = self.fred.observations(SERIES_IDS["m2"], limit=2)
+        if len(m2_observations) < 2:
+            raise RuntimeError("Not enough M2 history to calculate the proxy")
+        dxy_quote = self.market.dxy()
+        monthly_closes = self.market.dxy_monthly_closes(limit=2)
+        current_m2 = m2_observations[0].value / 1000
+        previous_m2 = m2_observations[1].value / 1000
+        current_proxy = (current_m2 / dxy_quote.current) * 100
+        previous_proxy = (previous_m2 / monthly_closes[1].close) * 100
+        mom = safe_pct_change(current_proxy, previous_proxy)
+        if (mom or 0) > 0:
+            status = "positive"
+            summary = "Global M2 proxy is expanding."
+        elif (mom or 0) < 0:
+            status = "negative"
+            summary = "Global M2 proxy is contracting."
+        else:
+            status = "neutral"
+            summary = "Global M2 proxy is flat."
+        return Metric(
+            key="global_m2_proxy",
+            label="Global M2 Proxy",
+            display_value=f"{current_proxy:.1f}",
+            status=status,
+            summary=summary,
+            secondary=f"{fmt_change(mom)} MoM",
+            raw_value=current_proxy,
+            updated_at=dxy_quote.updated_at or self._latest_date(m2_observations),
+            source="Calculated from FRED + yfinance",
+            cadence="15 minutes / weekly",
+            details={"mom": mom, "previous": previous_proxy},
         )
 
     def _build_ism_metric(self) -> Metric:
+        if self.perplexity.enabled:
+            reading = self.perplexity.latest_ism_manufacturing_pmi()
+            current = reading.current
+            previous = reading.previous
+            change = None if previous is None else current - previous
+            if current > 52:
+                status = "positive"
+                summary = "Manufacturing is in expansion."
+            elif current >= 50:
+                status = "neutral"
+                summary = "Manufacturing is positive, but only marginally."
+            else:
+                status = "negative"
+                summary = "Manufacturing is in contraction."
+            return Metric(
+                key="ism_pmi",
+                label="ISM PMI",
+                display_value=f"{current:.1f}",
+                status=status,
+                summary=summary,
+                secondary=(
+                    f"{fmt_change(change, suffix=' pts', precision=1)} vs prior release"
+                    if change is not None
+                    else f"Perplexity read for {reading.period_label or 'latest release'}"
+                ),
+                raw_value=current,
+                updated_at=reading.release_date,
+                source="Perplexity sonar-pro",
+                cadence="2 hours",
+                details={"previous": previous, "change": change, "period_label": reading.period_label},
+            )
+
         reading = self.ism.latest_manufacturing_pmi()
         current = reading.current
         previous = reading.previous
         change = None if previous is None else current - previous
-        if current > 50:
+        if current > 52:
             status = "positive"
-            summary = "Manufacturing is in expansion"
-        elif current < 50:
-            status = "negative"
-            summary = "Manufacturing is in contraction"
-        else:
+            summary = "Manufacturing is in expansion."
+        elif current >= 50:
             status = "neutral"
-            summary = "Manufacturing is neutral"
+            summary = "Manufacturing is positive, but only marginally."
+        else:
+            status = "negative"
+            summary = "Manufacturing is in contraction."
         return Metric(
             key="ism_pmi",
             label="ISM PMI",
@@ -307,6 +443,9 @@ class DashboardService:
             ),
             raw_value=current,
             updated_at=reading.release_at,
+            source="Official ISM",
+            cadence="2 hours",
+            details={"previous": previous, "change": change, "period_label": f"{reading.data_month} {reading.data_year}"},
         )
 
     def _build_yield_curve_metric(self) -> Metric:
@@ -314,17 +453,28 @@ class DashboardService:
         current = observations[0].value
         previous = observations[1].value if len(observations) > 1 else None
         change = None if previous is None else current - previous
-        status = "positive" if current > 0 else "negative"
-        summary = "Yield curve is positive" if status == "positive" else "Yield curve is inverted"
+        crossed_positive = previous is not None and previous <= 0 < current
+        if crossed_positive:
+            status = "neutral"
+            summary = "Yield curve has just flipped positive from inversion."
+        elif current > 0:
+            status = "positive"
+            summary = "Yield curve is positive and supportive."
+        else:
+            status = "negative"
+            summary = "Yield curve remains inverted."
         return Metric(
             key="yield_curve",
             label="Yield Curve",
-            display_value=f"{current:.2f}%",
+            display_value=f"{current:+.2f}%",
             status=status,
             summary=summary,
             secondary=f"{fmt_change(change, suffix=' pts', precision=2)} vs prior day" if change is not None else None,
             raw_value=current,
             updated_at=self._latest_date(observations),
+            source="FRED",
+            cadence="Daily",
+            details={"previous": previous, "change": change, "crossed_positive": crossed_positive},
         )
 
     def _build_credit_spreads_metric(self) -> Metric:
@@ -332,15 +482,15 @@ class DashboardService:
         current_bps = observations[0].value * 100
         previous_bps = observations[1].value * 100 if len(observations) > 1 else None
         change = None if previous_bps is None else current_bps - previous_bps
-        if current_bps < 400:
+        if current_bps < 350:
             status = "positive"
-            summary = "Credit stress is contained"
+            summary = "Credit stress is contained."
         elif current_bps > 500:
             status = "negative"
-            summary = "Credit stress is elevated"
+            summary = "Credit stress is elevated."
         else:
             status = "neutral"
-            summary = "Credit spreads are mixed"
+            summary = "Credit spreads are in a caution range."
         return Metric(
             key="credit_spreads",
             label="Credit Spreads",
@@ -350,47 +500,92 @@ class DashboardService:
             secondary=f"{fmt_change(change, suffix=' bps', precision=0)} vs prior day" if change is not None else None,
             raw_value=current_bps,
             updated_at=self._latest_date(observations),
+            source="FRED",
+            cadence="Daily",
+            details={"previous": previous_bps, "change": change},
         )
 
     def _build_jobless_claims_metric(self) -> Metric:
-        observations = self.fred.observations(SERIES_IDS["jobless_claims"], limit=2)
+        observations = self.fred.observations(SERIES_IDS["jobless_claims"], limit=5)
         current = observations[0].value
-        previous = observations[1].value if len(observations) > 1 else None
-        change = None if previous is None else current - previous
-        if current < 250_000 and (change is None or change <= 10_000):
+        previous_month = observations[4].value if len(observations) > 4 else None
+        month_change = None if previous_month is None else current - previous_month
+        rising_four_weeks = len(observations) >= 5 and all(
+            observations[index].value > observations[index + 1].value for index in range(4)
+        )
+        if current < 250_000 and not rising_four_weeks:
             status = "positive"
-            summary = "Labor market remains stable"
-        elif current > 300_000 or (change is not None and change > 25_000):
+            summary = "Jobless claims remain below 250k and stable."
+        elif rising_four_weeks or current > 300_000:
             status = "negative"
-            summary = "Labor market is softening"
+            summary = "Jobless claims are rising persistently."
         else:
             status = "neutral"
-            summary = "Claims are mixed"
+            summary = "Jobless claims are mixed."
         return Metric(
             key="jobless_claims",
             label="Jobless Claims",
             display_value=f"{current/1000:.0f}k",
             status=status,
             summary=summary,
-            secondary=f"{fmt_change(change / 1000 if change is not None else None, suffix='k', precision=0)} vs prior week" if change is not None else None,
+            secondary=(
+                f"{fmt_change(month_change / 1000 if month_change is not None else None, suffix='k', precision=0)} vs prior month"
+                if month_change is not None
+                else None
+            ),
             raw_value=current,
             updated_at=self._latest_date(observations),
+            source="FRED",
+            cadence="Weekly on release",
+            details={"month_change": month_change, "rising_four_weeks": rising_four_weeks},
         )
 
     def _build_korean_exports_metric(self) -> Metric:
+        if self.perplexity.enabled:
+            reading = self.perplexity.latest_korean_exports()
+            current = reading.current
+            previous = reading.previous
+            change = None if previous is None else current - previous
+            if current > 0 and (change is None or change > 0):
+                status = "positive"
+                summary = "Export growth is accelerating."
+            elif current < 0 or (change is not None and change < 0):
+                status = "negative"
+                summary = "Export momentum is decelerating."
+            else:
+                status = "neutral"
+                summary = "Export momentum is stable."
+            return Metric(
+                key="korean_exports",
+                label="Korean Exports",
+                display_value=f"{current:.1f}% YoY",
+                status=status,
+                summary=summary,
+                secondary=(
+                    f"{fmt_change(change, suffix=' pts', precision=1)} vs prior release"
+                    if change is not None
+                    else f"Perplexity read for {reading.period_label or 'latest release'}"
+                ),
+                raw_value=current,
+                updated_at=reading.release_date,
+                source="Perplexity sonar-pro",
+                cadence="2 hours",
+                details={"previous": previous, "change": change, "period_label": reading.period_label},
+            )
+
         observations = self.fred.observations(SERIES_IDS["korean_exports"], limit=2)
         current = observations[0].value
         previous = observations[1].value if len(observations) > 1 else None
         change = None if previous is None else current - previous
-        if current > 0:
+        if current > 0 and (change is None or change > 0):
             status = "positive"
-            summary = "Export growth is positive"
-        elif current < 0:
+            summary = "Export growth is accelerating."
+        elif current < 0 or (change is not None and change < 0):
             status = "negative"
-            summary = "Export growth is negative"
+            summary = "Export momentum is decelerating."
         else:
             status = "neutral"
-            summary = "Export growth is flat"
+            summary = "Export growth is stable."
         return Metric(
             key="korean_exports",
             label="Korean Exports",
@@ -400,4 +595,7 @@ class DashboardService:
             secondary=f"{fmt_change(change, suffix=' pts', precision=1)} vs prior month" if change is not None else None,
             raw_value=current,
             updated_at=self._latest_date(observations),
+            source="FRED",
+            cadence="Monthly",
+            details={"previous": previous, "change": change},
         )

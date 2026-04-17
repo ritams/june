@@ -33,11 +33,12 @@
               <div class="eyebrow eyebrow-inverse">Live dashboard</div>
               <h2 data-signal-heading>Business Cycle</h2>
               <p data-signal-summary>Waiting for live data.</p>
+              <p class="signal-action" data-signal-action></p>
             </div>
           </div>
           <div class="hero-side">
             <article class="meta-card">
-              <p class="meta-description">Economic acceleration versus stress across PMI, curve shape, credit, labor, and trade momentum.</p>
+              <p class="meta-description">Business-cycle dashboard across PMI, curve shape, credit, labor, and South Korean export momentum.</p>
               <dl>
                 <div>
                   <dt>Last update</dt>
@@ -49,12 +50,12 @@
                 </div>
                 <div class="meta-span">
                   <dt>Scope</dt>
-                  <dd>Official ISM, treasury spreads, high-yield credit, claims, and export momentum.</dd>
+                  <dd>ISM, treasury spreads, high-yield credit, jobless claims, and South Korean exports.</dd>
                 </div>
               </dl>
             </article>
             <article class="meta-bar">
-              <span class="mini-chip">Official ISM</span>
+              <span class="mini-chip">Perplexity optional</span>
               <span class="mini-chip">FRED</span>
               <span class="mini-chip">Cycle alerts</span>
               <span class="mini-chip">Telegram ready</span>
@@ -67,10 +68,46 @@
             <div>
               <div class="eyebrow">Dashboard</div>
               <h3 data-panel-title>Business Cycle</h3>
+              <p class="panel-copy" data-panel-summary>Waiting for live data.</p>
             </div>
             <div class="panel-status" data-panel-status>Loading</div>
           </div>
           <div class="metric-grid" data-metrics></div>
+        </section>
+
+        <section class="dashboard-panel playbook-panel">
+          <div class="panel-header playbook-header">
+            <div>
+              <div class="eyebrow">Historical Playbook</div>
+              <h3>Business Cycle Playbook</h3>
+              <p class="panel-copy">What tends to happen after the cycle turns, credit stress events, and macro summer entries.</p>
+            </div>
+            <div class="panel-kicker" data-playbook-updated>Cache pending</div>
+          </div>
+          <div class="playbook-grid">
+            <article class="allocation-card">
+              <div class="eyebrow">Allocation</div>
+              <h4 data-allocation-headline>Waiting for playbook data.</h4>
+              <p data-allocation-action>Allocation guidance will appear after the historical cache is ready.</p>
+              <div class="allocation-stats">
+                <div>
+                  <span>Deploy</span>
+                  <strong data-allocation-deploy>--</strong>
+                </div>
+                <div>
+                  <span>Cash</span>
+                  <strong data-allocation-cash>--</strong>
+                </div>
+              </div>
+              <p class="allocation-note" data-allocation-favor></p>
+              <p class="allocation-note" data-allocation-trim></p>
+            </article>
+            <article class="conviction-card">
+              <div class="eyebrow">Conviction</div>
+              <p data-conviction-callout>Two-year conviction callout will appear here when the playbook cache is ready.</p>
+            </article>
+          </div>
+          <div class="playbook-cards" data-playbook-cards></div>
         </section>
 
         <section class="footer-panel">

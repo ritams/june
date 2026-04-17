@@ -21,6 +21,8 @@ def _as_bool(value: str | None, default: bool) -> bool:
 @dataclass(frozen=True)
 class Settings:
     fred_api_key: str
+    perplexity_api_key: str | None
+    perplexity_model: str
     telegram_bot_token: str | None
     telegram_chat_id: str | None
     google_sheet_id: str | None
@@ -57,6 +59,8 @@ def get_settings() -> Settings:
 
     return Settings(
         fred_api_key=fred_api_key,
+        perplexity_api_key=os.getenv("PERPLEXITY_API_KEY") or None,
+        perplexity_model=os.getenv("PERPLEXITY_MODEL", "sonar-pro"),
         telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN") or None,
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID") or None,
         google_sheet_id=os.getenv("GOOGLE_SHEET_ID") or None,

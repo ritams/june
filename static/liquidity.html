@@ -33,11 +33,12 @@
               <div class="eyebrow eyebrow-inverse">Live dashboard</div>
               <h2 data-signal-heading>Liquidity</h2>
               <p data-signal-summary>Waiting for live data.</p>
+              <p class="signal-action" data-signal-action></p>
             </div>
           </div>
           <div class="hero-side">
             <article class="meta-card">
-              <p class="meta-description">Live macro data from FRED and yfinance, scored into one clean risk read instead of five disconnected tabs.</p>
+              <p class="meta-description">Liquidity dashboard with DXY, M2, RRP, TGA, Fed balance sheet, and the Global M2 proxy scored into one regime read.</p>
               <dl>
                 <div>
                   <dt>Last update</dt>
@@ -49,15 +50,15 @@
                 </div>
                 <div class="meta-span">
                   <dt>Scope</dt>
-                  <dd>Dollar, money supply, treasury plumbing, and Fed balance-sheet pressure.</dd>
+                  <dd>Dollar, money supply, treasury plumbing, Fed balance-sheet pressure, and the crypto-sensitive Global M2 proxy.</dd>
                 </div>
               </dl>
             </article>
             <article class="meta-bar">
               <span class="mini-chip">FRED</span>
               <span class="mini-chip">yfinance</span>
+              <span class="mini-chip">Global M2 proxy</span>
               <span class="mini-chip">Telegram ready</span>
-              <span class="mini-chip">Manual card send</span>
             </article>
           </div>
         </section>
@@ -67,10 +68,46 @@
             <div>
               <div class="eyebrow">Dashboard</div>
               <h3 data-panel-title>Liquidity</h3>
+              <p class="panel-copy" data-panel-summary>Waiting for live data.</p>
             </div>
             <div class="panel-status" data-panel-status>Loading</div>
           </div>
           <div class="metric-grid" data-metrics></div>
+        </section>
+
+        <section class="dashboard-panel playbook-panel">
+          <div class="panel-header playbook-header">
+            <div>
+              <div class="eyebrow">Historical Playbook</div>
+              <h3>Liquidity Playbook</h3>
+              <p class="panel-copy">What markets have historically done after the liquidity signals that matter most.</p>
+            </div>
+            <div class="panel-kicker" data-playbook-updated>Cache pending</div>
+          </div>
+          <div class="playbook-grid">
+            <article class="allocation-card">
+              <div class="eyebrow">Allocation</div>
+              <h4 data-allocation-headline>Waiting for playbook data.</h4>
+              <p data-allocation-action>Allocation guidance will appear after the historical cache is ready.</p>
+              <div class="allocation-stats">
+                <div>
+                  <span>Deploy</span>
+                  <strong data-allocation-deploy>--</strong>
+                </div>
+                <div>
+                  <span>Cash</span>
+                  <strong data-allocation-cash>--</strong>
+                </div>
+              </div>
+              <p class="allocation-note" data-allocation-favor></p>
+              <p class="allocation-note" data-allocation-trim></p>
+            </article>
+            <article class="conviction-card">
+              <div class="eyebrow">Conviction</div>
+              <p data-conviction-callout>Two-year conviction callout will appear here when the playbook cache is ready.</p>
+            </article>
+          </div>
+          <div class="playbook-cards" data-playbook-cards></div>
         </section>
 
         <section class="footer-panel">

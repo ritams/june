@@ -1,22 +1,26 @@
 ## June Dashboard
 
-June is a small FastAPI app that serves two macro dashboards:
+June is a small FastAPI app that serves two client-facing dashboards plus an optional combined overview:
 
 - `Liquidity`
 - `Business Cycle`
 
-The backend pulls live macro data from `FRED`, `yfinance`, and the official `ISM` manufacturing report page. It can also:
+The backend pulls live macro data from `FRED`, `yfinance`, and `Perplexity sonar-pro` when configured, with an official `ISM` fallback path if Perplexity is unavailable. It can also:
 
 - send Telegram alerts
 - send a daily Telegram card
 - append daily snapshots to Google Sheets when credentials are configured
+- build a cached historical playbook for both dashboard pages
 
 By default, external market and macro pulls are cached for `15 minutes`.
 
 ## What Is In Scope
 
-- Two vanilla pages: `/liquidity` and `/business-cycle`
+- Two client-facing dashboard pages at `/liquidity` and `/business-cycle`
+- One optional combined overview at `/dashboard`
 - Top-level `RISK ON` / `RISK OFF` signal
+- A middle `SELECTIVE` state when liquidity and cycle are mixed
+- Historical playbook sections on both pages with backtested forward returns and allocation guidance
 - Automatic alert checks every `15 minutes` while the app is running
 - Automatic daily card at the configured time
 - UK time support via `Europe/London`
@@ -69,6 +73,8 @@ For this deployment, use a block like this in `.env`:
 
 ```env
 FRED_API_KEY=your_fred_key
+PERPLEXITY_API_KEY=
+PERPLEXITY_MODEL=sonar-pro
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 TELEGRAM_CHAT_ID=your_telegram_chat_id
 GOOGLE_SHEET_ID=
@@ -90,7 +96,8 @@ Notes:
 - `APP_TIMEZONE` controls scheduler timing.
 - `DISPLAY_TIMEZONE` controls visible timestamps and the daily card date.
 - `Europe/London` is the correct choice for UK local time because it handles GMT and BST automatically.
-- `ISM PMI` does not need any extra env var. It comes from the official ISM page directly.
+- `PERPLEXITY_API_KEY` enables the full-build data path for `ISM PMI` and `South Korean Exports`.
+- Without `PERPLEXITY_API_KEY`, the app falls back to the official ISM page and FRED series for Korean exports.
 - If `GOOGLE_SHEET_ID` and `GOOGLE_SERVICE_ACCOUNT_FILE` are empty, the app still runs and Google Sheets stays disabled.
 
 ### 3. Run locally
@@ -103,8 +110,10 @@ uv run python main.py
 
 Open:
 
+- `http://127.0.0.1:8000/` redirects to `http://127.0.0.1:8000/liquidity`
 - `http://127.0.0.1:8000/liquidity`
 - `http://127.0.0.1:8000/business-cycle`
+- `http://127.0.0.1:8000/dashboard`
 
 Health check:
 
@@ -119,9 +128,26 @@ Expected shape:
   "ok": true,
   "telegram_enabled": true,
   "google_sheets_enabled": false,
-  "scheduler_enabled": true
+  "perplexity_enabled": false,
+  "scheduler_enabled": true,
+  "backtest_cache_available": true,
+  "backtest_last_calculated": "2026-04-18",
+  "backtest_cache_stale": false
 }
 ```
+
+## Historical Playbook
+
+Each dashboard page includes a cached "Historical Playbook" section:
+
+- `Liquidity`: `RISK ON`, `M2 Acceleration`, `Dollar Weakness`
+- `Business Cycle`: `RISK OFF`, `Yield Curve Uninversion`, `Credit Stress`, `Macro Summer Entry`
+
+The cache is written to `runtime/backtest_results.json`.
+
+- It refreshes weekly on Sunday when the scheduler is enabled.
+- It is also warmed in the background on startup if missing or stale.
+- Page loads read the cache and do not trigger recalculation themselves.
 
 ## Automatic Restart On macOS
 
@@ -211,12 +237,13 @@ Current automatic Telegram triggers:
 - `Credit spreads` crossing above `500 bps`
 - `DXY` crossing above `105`
 - `ISM PMI` crossing `50` in either direction
+- `Global M2 Proxy` dropping below `-3% MoM`
 
 Important:
 
 - Alerts trigger on a crossing event, not on every refresh.
 - The app must be running for the scheduler to work.
-- `Global M2 Proxy` alert logic is not wired yet.
+- Perplexity-backed release reads are optional, but the fallback data path is less aligned with the original build brief.
 
 ## Google Sheets Setup
 
@@ -262,6 +289,12 @@ uv run pytest -q
 Fetch a live liquidity snapshot:
 
 ```bash
+curl http://127.0.0.1:8000/api/snapshot
+```
+
+Fetch the liquidity dashboard payload, including its playbook cards:
+
+```bash
 curl http://127.0.0.1:8000/api/dashboard/liquidity
 ```
 
@@ -275,4 +308,10 @@ Send the current daily card immediately:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/actions/send-daily-card
+```
+
+Recalculate the historical playbook cache manually:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/actions/recalculate-playbook
 ```

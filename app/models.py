@@ -14,6 +14,9 @@ class Metric:
     secondary: str | None = None
     raw_value: float | None = None
     updated_at: str | None = None
+    source: str | None = None
+    cadence: str | None = None
+    details: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -25,6 +28,7 @@ class Dashboard:
     title: str
     status: str
     tone: str
+    summary: str
     metrics: list[Metric] = field(default_factory=list)
 
     def counts(self) -> tuple[int, int]:
@@ -38,5 +42,6 @@ class Dashboard:
             "title": self.title,
             "status": self.status,
             "tone": self.tone,
+            "summary": self.summary,
             "metrics": [metric.to_dict() for metric in self.metrics],
         }
