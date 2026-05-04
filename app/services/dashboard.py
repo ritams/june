@@ -6,12 +6,15 @@ import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import pandas as pd
+
 from app.config import Settings
 from app.models import Dashboard, Metric
 from app.services.fred import FredClient, Observation
 from app.services.ism import ISMClient
 from app.services.market import MarketClient
 from app.services.perplexity import PerplexityClient
+from app.services.stats import latest_zscore
 
 
 SERIES_IDS = {
@@ -200,6 +203,30 @@ class DashboardService:
     def _latest_date(self, observations: list[Observation]) -> str | None:
         return observations[0].date if observations else None
 
+    def _fred_zscore(self, series_id: str, window: int = 60, monthly: bool = True) -> float | None:
+        try:
+            obs = self.fred.observations(series_id, limit=None, sort_order="asc", observation_start="2010-01-01")
+            if not obs:
+                return None
+            series = pd.Series([o.value for o in obs], index=pd.to_datetime([o.date for o in obs]), dtype="float64")
+            if monthly:
+                series = series.groupby(series.index.to_period("M")).last()
+                series.index = series.index.to_timestamp("M")
+            return latest_zscore(series, window)
+        except Exception:
+            return None
+
+    def _dxy_zscore(self, window: int = 60) -> float | None:
+        try:
+            import yfinance as yf
+            history = yf.Ticker("DX-Y.NYB").history(period="10y", interval="1mo", auto_adjust=False)
+            if history is None or history.empty:
+                return None
+            series = history["Close"].dropna()
+            return latest_zscore(series, window)
+        except Exception:
+            return None
+
     def _safe_metric(self, key: str, label: str, builder) -> Metric:
         try:
             return builder()
@@ -229,6 +256,7 @@ class DashboardService:
         else:
             status = "neutral"
             summary = "Dollar is range-bound."
+        zscore = self._dxy_zscore()
         return Metric(
             key="dxy",
             label="DXY",
@@ -240,7 +268,7 @@ class DashboardService:
             updated_at=quote.updated_at,
             source="yfinance",
             cadence="15 minutes",
-            details={"pct_change": pct_change, "direction": direction},
+            details={"pct_change": pct_change, "direction": direction, "zscore": zscore},
         )
 
     def _build_m2_metric(self) -> Metric:
@@ -264,7 +292,7 @@ class DashboardService:
             updated_at=self._latest_date(observations),
             source="FRED",
             cadence="Weekly on release",
-            details={"mom": mom, "yoy": yoy, "current_trillions": current_trillions},
+            details={"mom": mom, "yoy": yoy, "current_trillions": current_trillions, "zscore": self._fred_zscore(SERIES_IDS["m2"])},
         )
 
     def _build_rrp_metric(self) -> Metric:
@@ -293,7 +321,7 @@ class DashboardService:
             updated_at=self._latest_date(observations),
             source="FRED",
             cadence="Daily",
-            details={"change": change, "direction": direction},
+            details={"change": change, "direction": direction, "zscore": self._fred_zscore(SERIES_IDS["rrp"])},
         )
 
     def _build_tga_metric(self) -> Metric:
@@ -322,7 +350,7 @@ class DashboardService:
             updated_at=self._latest_date(observations),
             source="FRED",
             cadence="Weekly",
-            details={"change": change, "direction": direction},
+            details={"change": change, "direction": direction, "zscore": self._fred_zscore(SERIES_IDS["tga"])},
         )
 
     def _build_fed_balance_sheet_metric(self) -> Metric:
@@ -347,7 +375,7 @@ class DashboardService:
             updated_at=self._latest_date(observations),
             source="FRED",
             cadence="Weekly on release",
-            details={"change": change},
+            details={"change": change, "zscore": self._fred_zscore(SERIES_IDS["fed_balance_sheet"])},
         )
 
     def _build_global_m2_proxy_metric(self) -> Metric:
@@ -381,7 +409,7 @@ class DashboardService:
             updated_at=dxy_quote.updated_at or self._latest_date(m2_observations),
             source="Calculated from FRED + yfinance",
             cadence="15 minutes / weekly",
-            details={"mom": mom, "previous": previous_proxy},
+            details={"mom": mom, "previous": previous_proxy, "zscore": self._fred_zscore(SERIES_IDS["m2"])},
         )
 
     def _build_ism_metric(self) -> Metric:
@@ -414,7 +442,7 @@ class DashboardService:
                 updated_at=reading.release_date,
                 source="Perplexity sonar-pro",
                 cadence="2 hours",
-                details={"previous": previous, "change": change, "period_label": reading.period_label},
+                details={"previous": previous, "change": change, "period_label": reading.period_label, "zscore": self._fred_zscore("IPMAN")},
             )
 
         reading = self.ism.latest_manufacturing_pmi()
@@ -445,7 +473,7 @@ class DashboardService:
             updated_at=reading.release_at,
             source="Official ISM",
             cadence="2 hours",
-            details={"previous": previous, "change": change, "period_label": f"{reading.data_month} {reading.data_year}"},
+            details={"previous": previous, "change": change, "period_label": f"{reading.data_month} {reading.data_year}", "zscore": self._fred_zscore("IPMAN")},
         )
 
     def _build_yield_curve_metric(self) -> Metric:
@@ -474,7 +502,7 @@ class DashboardService:
             updated_at=self._latest_date(observations),
             source="FRED",
             cadence="Daily",
-            details={"previous": previous, "change": change, "crossed_positive": crossed_positive},
+            details={"previous": previous, "change": change, "crossed_positive": crossed_positive, "zscore": self._fred_zscore(SERIES_IDS["yield_curve"])},
         )
 
     def _build_credit_spreads_metric(self) -> Metric:
@@ -502,7 +530,7 @@ class DashboardService:
             updated_at=self._latest_date(observations),
             source="FRED",
             cadence="Daily",
-            details={"previous": previous_bps, "change": change},
+            details={"previous": previous_bps, "change": change, "zscore": self._fred_zscore(SERIES_IDS["credit_spreads"])},
         )
 
     def _build_jobless_claims_metric(self) -> Metric:
@@ -537,7 +565,7 @@ class DashboardService:
             updated_at=self._latest_date(observations),
             source="FRED",
             cadence="Weekly on release",
-            details={"month_change": month_change, "rising_four_weeks": rising_four_weeks},
+            details={"month_change": month_change, "rising_four_weeks": rising_four_weeks, "zscore": self._fred_zscore(SERIES_IDS["jobless_claims"])},
         )
 
     def _build_korean_exports_metric(self) -> Metric:
@@ -570,7 +598,7 @@ class DashboardService:
                 updated_at=reading.release_date,
                 source="Perplexity sonar-pro",
                 cadence="2 hours",
-                details={"previous": previous, "change": change, "period_label": reading.period_label},
+                details={"previous": previous, "change": change, "period_label": reading.period_label, "zscore": self._fred_zscore(SERIES_IDS["korean_exports"])},
             )
 
         observations = self.fred.observations(SERIES_IDS["korean_exports"], limit=2)
@@ -597,5 +625,5 @@ class DashboardService:
             updated_at=self._latest_date(observations),
             source="FRED",
             cadence="Monthly",
-            details={"previous": previous, "change": change},
+            details={"previous": previous, "change": change, "zscore": self._fred_zscore(SERIES_IDS["korean_exports"])},
         )

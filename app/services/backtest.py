@@ -14,6 +14,7 @@ import yfinance as yf
 from app.config import Settings
 from app.services.fred import FredClient
 from app.services.ism import ISMClient
+from app.services.stats import tstat_from_returns
 
 
 HORIZONS = {
@@ -23,42 +24,102 @@ HORIZONS = {
     730: "2yr",
 }
 
+_HIGH = {"tone": "positive", "label": "HIGH", "description": "20+ complete cycles"}
+_MED = {"tone": "neutral", "label": "MEDIUM", "description": "Shorter ETF history"}
+_LOW = {"tone": "negative", "label": "LOW", "description": "Direction only, never sizing"}
+
+
+def _spec(ticker, label, bucket, *, start="2008-01-01", since=None, benchmark=None, confidence=None):
+    return {
+        "ticker": ticker,
+        "label": label,
+        "bucket": bucket,
+        "start": start,
+        "since": since or start[:4],
+        "benchmark": benchmark,
+        "confidence": confidence or _MED,
+    }
+
+
 ASSET_SPECS = {
-    "SPY": {
-        "ticker": "SPY",
-        "label": "S&P",
-        "start": "2000-01-01",
-        "since": "2000",
-        "confidence": {"tone": "positive", "label": "HIGH", "description": "20+ complete cycles"},
-    },
-    "QQQ": {
-        "ticker": "QQQ",
-        "label": "Nasdaq",
-        "start": "2000-01-01",
-        "since": "2000",
-        "confidence": {"tone": "positive", "label": "HIGH", "description": "20+ complete cycles"},
-    },
-    "IAU": {
-        "ticker": "IAU",
-        "label": "Gold",
-        "start": "2005-01-01",
-        "since": "2005",
-        "confidence": {"tone": "neutral", "label": "MEDIUM", "description": "Shorter ETF history"},
-    },
-    "BTC": {
-        "ticker": "BTC-USD",
-        "label": "BTC",
-        "start": "2017-01-01",
-        "since": "2017",
-        "confidence": {"tone": "negative", "label": "LOW", "description": "Direction only, never sizing"},
-    },
-    "DXY": {
-        "ticker": "DX-Y.NYB",
-        "label": "DXY",
-        "start": "2000-01-01",
-        "since": "2000",
-    },
+    # Equity regions (vs ACWI)
+    "SPY": _spec("SPY", "S&P 500", "equity_region", start="2000-01-01", benchmark="ACWI", confidence=_HIGH),
+    "QQQ": _spec("QQQ", "Nasdaq", "equity_region", start="2000-01-01", benchmark="ACWI", confidence=_HIGH),
+    "IWM": _spec("IWM", "US Small Cap", "equity_region", start="2000-05-01", benchmark="ACWI", confidence=_HIGH),
+    "EWJ": _spec("EWJ", "Japan", "equity_region", start="2000-01-01", benchmark="ACWI", confidence=_HIGH),
+    "EWY": _spec("EWY", "South Korea", "equity_region", start="2000-05-01", benchmark="ACWI", confidence=_HIGH),
+    "EFA": _spec("EFA", "Developed ex-US", "equity_region", start="2001-08-01", benchmark="ACWI", confidence=_HIGH),
+    "EEM": _spec("EEM", "Emerging Markets", "equity_region", start="2003-04-01", benchmark="ACWI", confidence=_HIGH),
+    "EWU": _spec("EWU", "UK", "equity_region", start="2000-01-01", benchmark="ACWI", confidence=_HIGH),
+    "EWL": _spec("EWL", "Switzerland", "equity_region", start="2000-01-01", benchmark="ACWI", confidence=_HIGH),
+    "EWZ": _spec("EWZ", "Brazil", "equity_region", start="2000-07-01", benchmark="ACWI", confidence=_HIGH),
+
+    # Equity sectors (vs ACWI)
+    "XLK": _spec("XLK", "Technology", "equity_sector", start="2000-01-01", benchmark="ACWI", confidence=_HIGH),
+    "XLY": _spec("XLY", "Cons Discretionary", "equity_sector", start="2000-01-01", benchmark="ACWI", confidence=_HIGH),
+    "XLE": _spec("XLE", "Energy", "equity_sector", start="2000-01-01", benchmark="ACWI", confidence=_HIGH),
+    "XLF": _spec("XLF", "Financials", "equity_sector", start="2000-01-01", benchmark="ACWI", confidence=_HIGH),
+    "XLV": _spec("XLV", "Healthcare", "equity_sector", start="2000-01-01", benchmark="ACWI", confidence=_HIGH),
+    "XLU": _spec("XLU", "Utilities", "equity_sector", start="2000-01-01", benchmark="ACWI", confidence=_HIGH),
+    "XLP": _spec("XLP", "Cons Staples", "equity_sector", start="2000-01-01", benchmark="ACWI", confidence=_HIGH),
+    "XLI": _spec("XLI", "Industrials", "equity_sector", start="2000-01-01", benchmark="ACWI", confidence=_HIGH),
+    "SMH": _spec("SMH", "Semiconductors", "equity_sector", start="2000-06-01", benchmark="ACWI", confidence=_HIGH),
+
+    # Fixed income (vs AGG)
+    "TLT": _spec("TLT", "Long Bonds 20yr+", "fixed_income", start="2002-08-01", benchmark="AGG", confidence=_HIGH),
+    "IEF": _spec("IEF", "Medium Bonds 7-10yr", "fixed_income", start="2002-08-01", benchmark="AGG", confidence=_HIGH),
+    "TIP": _spec("TIP", "TIPS", "fixed_income", start="2003-12-01", benchmark="AGG", confidence=_HIGH),
+    "HYG": _spec("HYG", "High Yield Credit", "fixed_income", start="2007-04-01", benchmark="AGG", confidence=_HIGH),
+    "LQD": _spec("LQD", "IG Credit", "fixed_income", start="2002-07-01", benchmark="AGG", confidence=_HIGH),
+
+    # Currencies (already vs USD)
+    "FXA": _spec("FXA", "AUD", "currency", start="2006-06-01", confidence=_MED),
+    "FXC": _spec("FXC", "CAD", "currency", start="2006-06-01", confidence=_MED),
+    "FXB": _spec("FXB", "GBP", "currency", start="2006-06-01", confidence=_MED),
+    "FXF": _spec("FXF", "CHF", "currency", start="2006-06-01", confidence=_MED),
+    "FXY": _spec("FXY", "JPY", "currency", start="2007-02-01", confidence=_MED),
+    "UUP": _spec("UUP", "USD Bull", "currency", start="2007-02-01", confidence=_MED),
+
+    # Commodities (vs GSG)
+    "IAU": _spec("IAU", "Gold", "commodity", start="2005-01-01", benchmark="GSG", confidence=_MED),
+    "COPX": _spec("COPX", "Copper Miners", "commodity", start="2009-04-01", benchmark="GSG", confidence=_MED),
+    "USO": _spec("USO", "Oil", "commodity", start="2006-04-01", benchmark="GSG", confidence=_MED),
+    "DBA": _spec("DBA", "Agriculture", "commodity", start="2007-01-01", benchmark="GSG", confidence=_MED),
+    "DJP": _spec("DJP", "Broad Commodities", "commodity", start="2006-06-01", benchmark="GSG", confidence=_MED),
+
+    # Style factors (vs ACWI)
+    "IWF": _spec("IWF", "US Growth", "style", start="2000-05-01", benchmark="ACWI", confidence=_HIGH),
+    "IWD": _spec("IWD", "US Value", "style", start="2000-05-01", benchmark="ACWI", confidence=_HIGH),
+    "MTUM": _spec("MTUM", "Momentum", "style", start="2013-04-01", benchmark="ACWI", confidence=_LOW),
+
+    # Crypto
+    "BTC": _spec("BTC-USD", "BTC", "crypto", start="2014-09-01", confidence=_LOW),
+
+    # Cash proxy (1-3mo T-bills) — used by asset-class bucket only
+    "BIL": _spec("BIL", "1-3mo T-Bills", "_cash_proxy", start="2007-06-01"),
+
+    # Internal: DXY price series, used by macro data layer (not in scenario universe)
+    "DXY": _spec("DX-Y.NYB", "DXY", "_internal", start="2000-01-01"),
 }
+
+# Benchmarks for relative-return computation. Pulled like assets but excluded from ranking.
+BENCHMARK_SPECS = {
+    "ACWI": _spec("ACWI", "MSCI ACWI", "_benchmark", start="2008-04-01"),
+    "AGG":  _spec("AGG",  "Bloomberg Global Agg", "_benchmark", start="2003-09-01"),
+    "GSG":  _spec("GSG",  "S&P GSCI", "_benchmark", start="2006-07-01"),
+}
+
+# Asset-class proxies for the absolute-return view (Bittel's 6-class top-3/bottom-3)
+ASSET_CLASS_PROXIES = {
+    "equities":    {"label": "Equities",    "proxy": "SPY"},
+    "credit":      {"label": "Credit",      "proxy": "HYG"},
+    "commodities": {"label": "Commodities", "proxy": "DJP"},
+    "bonds":       {"label": "Bonds",       "proxy": "IEF"},
+    "cash":        {"label": "Cash",        "proxy": "BIL"},
+    "crypto":      {"label": "Crypto",      "proxy": "BTC"},
+}
+
+SCENARIO_BUCKETS = ["asset_class", "equity_region", "equity_sector", "fixed_income", "currency", "commodity", "style", "crypto"]
 
 SIGNAL_SPECS = {
     "risk_on": {
@@ -180,12 +241,14 @@ def calculate_forward_returns(
                 continue
             returns.append(float((exit_price - entry) / entry * 100))
         if returns:
+            t_stat = tstat_from_returns(returns)
             results[str(horizon)] = {
                 "avg": round(mean(returns), 1),
                 "win_rate": round(sum(value > 0 for value in returns) / len(returns), 2),
                 "n": len(returns),
                 "best": round(max(returns), 1),
                 "worst": round(min(returns), 1),
+                "t_stat": round(t_stat, 2) if t_stat is not None else None,
             }
     return results
 
@@ -318,13 +381,13 @@ class BacktestService:
         return payload
 
     def _load_assets(self) -> dict[str, pd.Series]:
+        keys = {"DXY"}
+        for spec in SIGNAL_SPECS.values():
+            keys.update(spec["assets"])
         assets: dict[str, pd.Series] = {}
-        for asset_key, spec in ASSET_SPECS.items():
-            data = yf.download(spec["ticker"], start=spec["start"], auto_adjust=True, progress=False)
-            close = data["Close"]
-            if isinstance(close, pd.DataFrame):
-                close = close.iloc[:, 0]
-            assets[asset_key] = close.dropna().sort_index()
+        for asset_key in keys:
+            spec = ASSET_SPECS[asset_key]
+            assets[asset_key] = self._download_close(spec["ticker"], spec["start"])
         return assets
 
     def _load_macro_data(self, dxy_daily: pd.Series) -> dict[str, pd.Series]:
@@ -333,6 +396,9 @@ class BacktestService:
         yield_curve = self._fred_series("T10Y2Y")
         credit_spreads = self._fred_series("BAMLH0A0HYM2") * 100
         ism = self._historical_ism_series()
+        cpi = self._fred_series("CPIAUCSL")
+        two_year = self._fred_series("DGS2")
+        oil = self._fred_series("DCOILWTICO")
 
         monthly = pd.DataFrame(
             {
@@ -342,19 +408,67 @@ class BacktestService:
                 "yield_curve": _as_monthly_last(yield_curve),
                 "credit_spreads": _as_monthly_last(credit_spreads),
                 "ism": _as_monthly_last(ism),
+                "cpi": _as_monthly_last(cpi),
+                "two_year": _as_monthly_last(two_year),
+                "oil": _as_monthly_last(oil),
             }
-        ).dropna()
+        ).dropna(subset=["m2", "dxy", "yield_curve", "ism"])
         monthly["m2_mom"] = monthly["m2"].pct_change() * 100
+        monthly["m2_yoy"] = monthly["m2"].pct_change(12) * 100
         monthly["rrp_change"] = monthly["rrp"].diff()
         monthly["credit_change"] = monthly["credit_spreads"].diff()
         monthly["ism_change"] = monthly["ism"].diff()
+        monthly["ism_yoy"] = monthly["ism"] - monthly["ism"].shift(12)
         monthly["dxy_3m_change"] = monthly["dxy"] - monthly["dxy"].shift(3)
+        monthly["dxy_yoy"] = monthly["dxy"].pct_change(12) * 100
+        monthly["cpi_yoy"] = monthly["cpi"].pct_change(12) * 100
+        monthly["oil_yoy"] = monthly["oil"].pct_change(12) * 100
+        monthly["two_year_yoy"] = monthly["two_year"] - monthly["two_year"].shift(12)
 
         return {
             "monthly": monthly,
             "yield_curve_daily": yield_curve,
             "credit_daily": credit_spreads,
         }
+
+    # --- Public hooks for the correlation engine (Phase 4c) ---
+
+    def factor_series(self) -> dict[str, pd.Series]:
+        """Return the 7 macro factor series indexed by month-end. Used by correlations."""
+        dxy_daily = self._download_close(ASSET_SPECS["DXY"]["ticker"], ASSET_SPECS["DXY"]["start"])
+        macro = self._load_macro_data(dxy_daily)
+        monthly = macro["monthly"]
+        spy_close = self._download_close(ASSET_SPECS["SPY"]["ticker"], ASSET_SPECS["SPY"]["start"])
+        spy_monthly = _as_monthly_last(spy_close)
+        risk_on_off = spy_monthly.pct_change() * 100
+        return {
+            "risk_on_off": risk_on_off.dropna(),
+            "growth": monthly["ism_yoy"].dropna(),
+            "inflation": monthly["cpi_yoy"].dropna(),
+            "short_rates": monthly["two_year_yoy"].dropna(),
+            "liquidity": monthly["m2_yoy"].dropna(),
+            "dollar": monthly["dxy_yoy"].dropna(),
+            "oil": monthly["oil_yoy"].dropna(),
+        }
+
+    def load_universe(self) -> dict[str, pd.Series]:
+        """Daily price series for every asset + benchmark + cash proxy. Used by correlations."""
+        out: dict[str, pd.Series] = {}
+        for key, spec in {**ASSET_SPECS, **BENCHMARK_SPECS}.items():
+            if spec["bucket"] == "_internal":
+                continue
+            try:
+                out[key] = self._download_close(spec["ticker"], spec["start"])
+            except Exception:
+                continue
+        return out
+
+    def _download_close(self, ticker: str, start: str) -> pd.Series:
+        data = yf.download(ticker, start=start, auto_adjust=True, progress=False)
+        close = data["Close"]
+        if isinstance(close, pd.DataFrame):
+            close = close.iloc[:, 0]
+        return close.dropna().sort_index()
 
     def _fred_series(self, series_id: str) -> pd.Series:
         observations = self.fred.observations(series_id, limit=None, sort_order="asc", observation_start=HISTORY_START)
@@ -454,6 +568,7 @@ class BacktestService:
                 has_limited_samples = has_limited_samples or limited
                 avg_display = _format_pct(raw["avg"])
                 win_rate_display = f"{round(raw['win_rate'] * 100):.0f}%"
+                t_stat = raw.get("t_stat")
                 horizon_map[str(horizon)] = {
                     "label": HORIZONS[horizon],
                     "avg": raw["avg"],
@@ -461,8 +576,10 @@ class BacktestService:
                     "n": raw["n"],
                     "best": raw["best"],
                     "worst": raw["worst"],
+                    "t_stat": t_stat,
                     "display_avg": f"{avg_display}*" if limited else avg_display,
                     "display_win_rate": f"{win_rate_display}*" if limited else win_rate_display,
+                    "display_t_stat": "n/a" if t_stat is None else f"{t_stat:+.2f}",
                     "missing": False,
                     "limited": limited,
                 }

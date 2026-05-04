@@ -10,8 +10,10 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import ROOT_DIR, get_settings
 from app.services.backtest import BacktestService
+from app.services.correlations import FACTOR_KEYS, SCENARIO_PRESETS, CorrelationService
 from app.services.dashboard import DashboardService
 from app.services.monitor import MonitorService
+from app.services.scenario_inputs import auto_fill_scenario
 from app.services.sheets import SheetsClient
 from app.services.state import StateStore
 from app.services.telegram import TelegramClient
@@ -20,6 +22,7 @@ from app.services.telegram import TelegramClient
 settings = get_settings()
 dashboard_service = DashboardService(settings)
 backtest_service = BacktestService(settings, fred=dashboard_service.fred)
+correlation_service = CorrelationService(settings, backtest_service)
 telegram_client = TelegramClient(settings.telegram_bot_token, settings.telegram_chat_id)
 sheets_client = SheetsClient(
     spreadsheet_id=settings.google_sheet_id,
@@ -27,7 +30,14 @@ sheets_client = SheetsClient(
     worksheet_title=settings.google_sheet_tab,
 )
 state_store = StateStore(settings.runtime_dir / "monitor_state.json")
-monitor_service = MonitorService(settings, dashboard_service, telegram_client, sheets_client, state_store)
+monitor_service = MonitorService(
+    settings,
+    dashboard_service,
+    telegram_client,
+    sheets_client,
+    state_store,
+    correlation_service=correlation_service,
+)
 
 app = FastAPI(title="June Dashboard", version="0.1.0")
 app.mount("/static", StaticFiles(directory=str(ROOT_DIR / "static")), name="static")
@@ -41,6 +51,7 @@ def _static_page(name: str) -> FileResponse:
 @app.on_event("startup")
 def start_scheduler() -> None:
     backtest_service.ensure_cache_async()
+    correlation_service.ensure_cache_async()
     if not settings.enable_scheduler:
         return
     if scheduler.running:
@@ -49,7 +60,16 @@ def start_scheduler() -> None:
     hour, minute = settings.daily_card_time.split(":")
     scheduler.add_job(monitor_service.send_daily_card, "cron", hour=int(hour), minute=int(minute))
     scheduler.add_job(backtest_service.refresh_cache, "cron", day_of_week="sun", hour=6, minute=0)
+    scheduler.add_job(correlation_service.refresh_cache, "cron", day=1, hour=6, minute=30)
+    scheduler.add_job(monitor_service.run_regime_change_check, "cron", hour=hour_or_six(settings.daily_card_time), minute=0)
     scheduler.start()
+
+
+def hour_or_six(card_time: str) -> int:
+    try:
+        return int(card_time.split(":")[0])
+    except Exception:
+        return 6
 
 
 @app.on_event("shutdown")
@@ -140,6 +160,83 @@ def recalculate_playbook() -> dict:
         "last_calculated": payload["last_calculated"],
         "signals": sorted(payload["signals"].keys()),
     }
+
+
+@app.post("/api/actions/recalculate-correlations")
+def recalculate_correlations() -> dict:
+    payload = correlation_service.refresh_cache()
+    return {
+        "ok": True,
+        "last_calculated": payload["last_calculated"],
+        "factor_count": len(payload.get("factors", {})),
+        "asset_count": len(payload.get("assets", {})),
+    }
+
+
+_HISTORY_SERIES = {
+    "m2": "M2SL",
+    "ism": "IPMAN",
+    "cpi_yoy": "CPIAUCSL",
+    "yield_curve": "T10Y2Y",
+    "credit_spreads": "BAMLH0A0HYM2",
+    "two_year": "DGS2",
+    "oil": "DCOILWTICO",
+}
+
+
+@app.get("/api/history/{key}")
+def history(key: str, months: int = 60) -> dict:
+    series_id = _HISTORY_SERIES.get(key)
+    if not series_id:
+        raise HTTPException(status_code=404, detail="Unknown series")
+    obs = dashboard_service.fred.observations(series_id, limit=None, sort_order="asc", observation_start="2010-01-01")
+    points = [{"date": o.date, "value": o.value} for o in obs[-months:]]
+    if key == "cpi_yoy" and len(obs) >= 13:
+        all_values = [{"date": o.date, "value": o.value} for o in obs]
+        yoy: list[dict] = []
+        for i in range(12, len(all_values)):
+            base = all_values[i - 12]["value"]
+            if base:
+                yoy.append({"date": all_values[i]["date"], "value": (all_values[i]["value"] / base - 1) * 100})
+        points = yoy[-months:]
+    return {"key": key, "series_id": series_id, "points": points}
+
+
+@app.get("/api/scenario/presets")
+def scenario_presets() -> dict:
+    return {
+        "factor_keys": FACTOR_KEYS,
+        "presets": SCENARIO_PRESETS,
+    }
+
+
+@app.get("/api/scenario")
+def scenario(
+    risk_on_off: float | None = None,
+    growth: float | None = None,
+    inflation: float | None = None,
+    short_rates: float | None = None,
+    liquidity: float | None = None,
+    dollar: float | None = None,
+    oil: float | None = None,
+    auto: bool = False,
+) -> dict:
+    if auto:
+        snapshot = dashboard_service.get_snapshot(force=False)
+        scenario_input = auto_fill_scenario(snapshot, backtest_service)
+    else:
+        raw = {
+            "risk_on_off": risk_on_off,
+            "growth": growth,
+            "inflation": inflation,
+            "short_rates": short_rates,
+            "liquidity": liquidity,
+            "dollar": dollar,
+            "oil": oil,
+        }
+        scenario_input = {k: (0.0 if v is None else max(-1.0, min(1.0, v))) for k, v in raw.items()}
+    result = correlation_service.rank_scenario(scenario_input)
+    return result
 
 
 def run() -> None:

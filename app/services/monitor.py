@@ -4,7 +4,9 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from app.config import Settings
+from app.services.correlations import FACTOR_LABELS
 from app.services.dashboard import DashboardService
+from app.services.scenario_inputs import auto_fill_scenario, get_factor_stats
 from app.services.sheets import SheetsClient
 from app.services.state import StateStore
 from app.services.telegram import TelegramClient
@@ -18,12 +20,14 @@ class MonitorService:
         telegram: TelegramClient,
         sheets: SheetsClient,
         state_store: StateStore,
+        correlation_service=None,
     ) -> None:
         self.settings = settings
         self.dashboard_service = dashboard_service
         self.telegram = telegram
         self.sheets = sheets
         self.state_store = state_store
+        self.correlation_service = correlation_service
 
     def run_alert_checks(self) -> list[str]:
         snapshot = self.dashboard_service.get_snapshot(force=True)
@@ -78,6 +82,60 @@ class MonitorService:
                 self._safe_telegram_send(message)
 
         state["alerts"] = alerts
+        self.state_store.save(state)
+        return messages
+
+    def run_regime_change_check(self) -> list[str]:
+        """Fire alerts only on regime changes:
+        (a) the Top-1 ranked asset (composite score) flips, OR
+        (b) any macro factor's z-score crosses ±1.
+        """
+        if self.correlation_service is None:
+            return []
+        snapshot = self.dashboard_service.get_snapshot(force=False)
+        scenario = auto_fill_scenario(snapshot, self.correlation_service.backtest)
+        ranking = self.correlation_service.rank_scenario(scenario)
+        if not ranking.get("available"):
+            return []
+
+        state = self.state_store.load()
+        regime = state.get("regime", {})
+        messages: list[str] = []
+
+        # (a) Top-1 flip per bucket
+        prev_top1 = regime.get("top1", {})
+        new_top1: dict[str, str] = {}
+        for bucket_key, bucket in ranking["buckets"].items():
+            top = bucket.get("top_3") or []
+            if not top:
+                continue
+            asset_label = top[0]["label"]
+            new_top1[bucket_key] = asset_label
+            previous = prev_top1.get(bucket_key)
+            if previous and previous != asset_label:
+                msg = f"REGIME CHANGE — {bucket_key}: {previous} → {asset_label} now ranks #1 (composite {top[0]['composite_score']})"
+                messages.append(msg)
+                self._safe_telegram_send(msg)
+
+        # (b) Factor z-score crossing ±1
+        prev_z = regime.get("factor_z", {})
+        stats = get_factor_stats(self.correlation_service.backtest)
+        new_z: dict[str, float | None] = {}
+        for factor_key, payload in stats.items():
+            current_z = payload.get("zscore")
+            new_z[factor_key] = current_z
+            previous = prev_z.get(factor_key)
+            if current_z is None or previous is None:
+                continue
+            if (abs(previous) < 1.0 <= abs(current_z)) or (abs(previous) >= 1.0 > abs(current_z)):
+                direction = "crossed above" if abs(current_z) >= 1.0 else "crossed back below"
+                msg = f"FACTOR REGIME — {FACTOR_LABELS.get(factor_key, factor_key)} z-score {direction} ±1 (now {current_z:+.2f})"
+                messages.append(msg)
+                self._safe_telegram_send(msg)
+
+        regime["top1"] = new_top1
+        regime["factor_z"] = new_z
+        state["regime"] = regime
         self.state_store.save(state)
         return messages
 

@@ -110,6 +110,42 @@
           <div class="playbook-cards" data-playbook-cards></div>
         </section>
 
+        <section class="dashboard-panel cycle-quadrant-panel">
+          <div class="panel-header">
+            <div>
+              <div class="eyebrow">Liquidity trend</div>
+              <h3>US M2 (5-year)</h3>
+              <p class="panel-copy">Monthly close of US M2 against its 60-month history.</p>
+            </div>
+          </div>
+          <div class="cycle-spark" data-cycle-spark></div>
+        </section>
+
+        <section class="dashboard-panel scenario-panel" data-scenario-panel>
+          <div class="panel-header">
+            <div>
+              <div class="eyebrow">Scenario engine — Bittel MIT</div>
+              <h3>Scenario analysis</h3>
+              <p class="panel-copy">Set the macro factors (or pick a preset) to see the historically-significant top and bottom assets per bucket. Composite = expected return × T-stat.</p>
+            </div>
+            <div class="panel-kicker" data-scenario-updated>Cache pending</div>
+          </div>
+          <div class="scenario-controls">
+            <div class="scenario-presets" data-scenario-presets></div>
+            <div class="scenario-sliders" data-scenario-sliders></div>
+            <div class="scenario-actions">
+              <button class="button secondary" type="button" data-scenario-auto>Auto-fill from live snapshot</button>
+              <button class="button secondary" type="button" data-scenario-reset>Reset to neutral</button>
+              <button class="button secondary" type="button" data-scenario-recalc>Recalculate matrix</button>
+            </div>
+          </div>
+          <div class="scenario-buckets" data-scenario-buckets></div>
+          <details class="scenario-heatmap-wrap">
+            <summary>Show full heat map</summary>
+            <div data-scenario-heatmap></div>
+          </details>
+        </section>
+
         <section class="footer-panel">
           <div class="footer-copy">
             <div class="eyebrow">Operations</div>
