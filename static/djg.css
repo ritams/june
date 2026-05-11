@@ -637,6 +637,51 @@ select.djg-pill {
   line-height: 1.4;
 }
 
+/* ═══ Spinner overlay (initial cold-start) ═══ */
+.djg-spinner-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(10, 13, 16, 0.92);
+  backdrop-filter: blur(4px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  justify-content: center;
+  pointer-events: all;
+  transition: opacity 200ms ease;
+}
+.djg-spinner-overlay[hidden] {
+  opacity: 0;
+  pointer-events: none;
+  display: flex;
+}
+.djg-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--djg-line);
+  border-top-color: var(--djg-accent);
+  border-radius: 50%;
+  animation: djg-spin 900ms linear infinite;
+}
+.djg-spinner-text {
+  font-family: var(--djg-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--djg-text-dim);
+  text-transform: uppercase;
+  max-width: 280px;
+  text-align: center;
+  line-height: 1.5;
+}
+@keyframes djg-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .djg-spinner { animation: none; border-top-color: var(--djg-accent); }
+}
+
 /* ═══ Toast ═══ */
 .djg-toast {
   position: fixed;

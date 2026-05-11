@@ -43,9 +43,41 @@
   });
 
   async function boot() {
-    await refreshAll();
+    showSpinner("Loading allocation engine — pulling FRED + market data…");
+    let slowMsgTimer = setTimeout(() => {
+      updateSpinnerText("Still warming up — first load pulls a year of macro history. Hang on…");
+    }, 12000);
+    try {
+      await refreshAll();
+      // Cold-start fallback: the server may have returned an empty allocation
+      // (FRED/yfinance still warming). Retry once after a short delay.
+      if (state.autoMode && !state.scenario?.allocation?.available) {
+        updateSpinnerText("Macro data wasn't ready — retrying in a few seconds…");
+        await new Promise((r) => setTimeout(r, 6000));
+        await refreshAll();
+      }
+    } finally {
+      clearTimeout(slowMsgTimer);
+      hideSpinner();
+    }
     // Update every 5 minutes once loaded — daily data refresh server-side anyway.
     setInterval(() => refreshAll().catch(console.error), 5 * 60 * 1000);
+  }
+
+  function showSpinner(text) {
+    const el = $("[data-spinner]");
+    if (!el) return;
+    el.hidden = false;
+    if (text) updateSpinnerText(text);
+  }
+  function updateSpinnerText(text) {
+    const t = $("[data-spinner-text]");
+    if (t) t.textContent = text;
+  }
+  function hideSpinner() {
+    const el = $("[data-spinner]");
+    if (!el) return;
+    el.hidden = true;
   }
 
   async function refreshAll() {

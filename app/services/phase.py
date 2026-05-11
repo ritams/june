@@ -27,7 +27,10 @@ from app.services.stats import latest_zscore, rolling_zscore
 
 
 HYSTERESIS_BAND = 0.25
-CONFIRMATION_MONTHS = 2
+# 1-month confirmation — phase flips on the same month directions agree
+# (subject only to the ±0.25σ hysteresis filter). See docs/alternative-rules.md §1
+# for the 2-month rule and the rollback procedure.
+CONFIRMATION_MONTHS = 1
 ZSCORE_WINDOW = 60  # 5 years of monthly observations
 DIRECTION_LOOKBACK_MONTHS = 3
 

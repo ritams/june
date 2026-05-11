@@ -78,11 +78,13 @@ def test_hysteresis_holds_direction_when_change_below_band() -> None:
     assert reading.growth_dir == "up"
 
 
-def test_one_month_of_new_phase_does_not_flip() -> None:
-    # 8 months of confirmed Winter (down/down), then 1 month of Spring-like reading.
-    # Confirmed phase should still be Winter because new phase only held 1 month.
-    # Direction is on 3-month delta_z, so the final month needs a big enough jump
-    # in growth to flip its 3-month direction sign.
+def test_single_month_flip_confirms_immediately() -> None:
+    """With CONFIRMATION_MONTHS = 1, a one-month direction agreement is enough to flip.
+
+    Previously (CONFIRMATION_MONTHS = 2) this would have stayed on the prior
+    confirmed phase. See docs/alternative-rules.md §1 for the rationale behind
+    dropping the 2-month rule.
+    """
     growth_z_vals    = [3.0, 2.5, 2.0, 1.5, 1.0, 0.5, 0.0, -0.5, -1.0, -1.5, -2.0, +1.0]
     inflation_z_vals = [3.0, 2.5, 2.0, 1.5, 1.0, 0.5, 0.0, -0.5, -1.0, -1.5, -2.0, -2.5]
 
@@ -90,8 +92,9 @@ def test_one_month_of_new_phase_does_not_flip() -> None:
     inflation_z = _z_series_with_trajectory(inflation_z_vals)
 
     reading = classify_from_z_series(growth_z, inflation_z)
+    # Last month direction: growth ↑ (jump from -2 to +1, Δ3m positive), inflation ↓ → Spring.
     assert reading.confirmed
-    assert reading.key == "winter", f"got {reading.key}, proposed {reading.proposed_phase}"
+    assert reading.key == "spring"
     assert reading.proposed_phase == "spring"
     assert reading.months_in_phase >= CONFIRMATION_MONTHS
 

@@ -61,48 +61,114 @@ def metric_direction(change: float | None, tolerance: float = 0.0) -> str:
 
 
 def summarize_section(metrics: dict[str, Metric], section: str) -> tuple[str, str, str]:
-    if section == "liquidity":
-        m2_mom = metrics["m2"].details.get("mom")
-        rrp_direction = metrics["rrp"].details.get("direction")
-        dxy = metrics["dxy"].raw_value
-        if m2_mom is not None and m2_mom > 0.3 and rrp_direction == "falling" and dxy is not None and dxy < 101:
-            return "EXPANDING", "positive", "Liquidity is expanding across money supply, funding, and dollar conditions."
-        if (dxy is not None and dxy > 104) or (m2_mom is not None and m2_mom < 0):
-            return "CONTRACTING", "negative", "Liquidity is tightening and becoming a headwind for risk assets."
-        return "NEUTRAL", "neutral", "Liquidity inputs are mixed, so the backdrop is not fully supportive."
+    """Count-based classifier — see docs/alternative-rules.md §2 for the previous
+    conjunctive rule and the rollback procedure.
 
-    ism = metrics["ism_pmi"].raw_value
-    yield_curve = metrics["yield_curve"].raw_value
-    spreads = metrics["credit_spreads"].raw_value
-    if ism is not None and yield_curve is not None and spreads is not None:
-        if ism > 52 and yield_curve > 0 and spreads < 350:
-            return "EXPANSION", "positive", "The cycle remains in expansion with supportive manufacturing, curve, and credit signals."
-        if ism > 50 and spreads < 450:
-            return "LATE CYCLE", "neutral", "Growth is still positive, but conditions are no longer cleanly early-cycle."
-        if ism < 50 or spreads > 500:
-            return "CONTRACTION", "negative", "Cycle indicators are deteriorating into a defensive macro regime."
-    return "TRANSITION", "neutral", "Cycle indicators are at an inflection rather than in a confirmed regime."
+    Liquidity (6 metrics):
+      EXPANDING   ≥ 80% positive (≥5/6)
+      CONTRACTING ≥ 50% negative (≥3/6)
+      NEUTRAL     everything else
+
+    Cycle (5 metrics):
+      EXPANSION   ≥ 80% positive (≥4/5)
+      LATE CYCLE  exactly one negative (4/5 positive but not all)
+      CONTRACTION ≥ 40% negative (≥2/5)
+      TRANSITION  everything else
+    """
+    statuses = [metric.status for metric in metrics.values()]
+    n = max(len(statuses), 1)
+    pos = sum(1 for s in statuses if s == "positive")
+    neg = sum(1 for s in statuses if s == "negative")
+    pos_pct = pos / n
+    neg_pct = neg / n
+
+    if section == "liquidity":
+        if pos_pct >= 0.80:
+            return (
+                "EXPANDING",
+                "positive",
+                f"{pos}/{n} liquidity metrics are positive — liquidity is supportive for risk assets.",
+            )
+        if neg_pct >= 0.50:
+            return (
+                "CONTRACTING",
+                "negative",
+                f"{neg}/{n} liquidity metrics are negative — liquidity is tightening.",
+            )
+        return (
+            "NEUTRAL",
+            "neutral",
+            f"Mixed liquidity inputs ({pos} positive, {neg} negative of {n}) — backdrop is not fully supportive.",
+        )
+
+    # cycle. Order matters: "4 positive + 1 negative" should be LATE CYCLE
+    # (one indicator turning), but "4 positive + 1 neutral" is full EXPANSION.
+    if neg == 1 and pos == n - 1:
+        return (
+            "LATE CYCLE",
+            "neutral",
+            f"{pos}/{n} positive — late-cycle: growth still positive but one indicator turning.",
+        )
+    if pos_pct >= 0.80:
+        return (
+            "EXPANSION",
+            "positive",
+            f"{pos}/{n} cycle metrics are positive — expansionary regime.",
+        )
+    if neg_pct >= 0.40:
+        return (
+            "CONTRACTION",
+            "negative",
+            f"{neg}/{n} cycle metrics are negative — cycle is contracting.",
+        )
+    return (
+        "TRANSITION",
+        "neutral",
+        f"Mixed cycle inputs ({pos} positive, {neg} negative of {n}) — at an inflection rather than a confirmed regime.",
+    )
 
 
 def overall_signal(liquidity: Dashboard, cycle: Dashboard) -> tuple[str, str, str, str]:
+    """Count-based combinator — see docs/alternative-rules.md §2.
+
+    RISK ON when either:
+      a) Liquidity EXPANDING AND Cycle EXPANSION (clean alignment), or
+      b) ≥ 80% of combined metrics positive AND no section is CONTRACTING/CONTRACTION
+         (catches the 'LATE CYCLE but broadly green' case Dan flagged).
+    RISK OFF when either section flips to CONTRACTING/CONTRACTION.
+    SELECTIVE everywhere else.
+    """
+    total_metrics = len(liquidity.metrics) + len(cycle.metrics)
+    liq_pos, liq_neg = liquidity.counts()
+    cyc_pos, cyc_neg = cycle.counts()
+    total_pos = liq_pos + cyc_pos
+    pos_pct = total_pos / total_metrics if total_metrics else 0.0
+
     if liquidity.status == "EXPANDING" and cycle.status == "EXPANSION":
         return (
             "RISK ON",
             "positive",
-            "Liquidity and cycle are aligned in a supportive regime.",
+            f"Liquidity and cycle both green ({total_pos}/{total_metrics} metrics positive).",
             "Add to high conviction positions on dips.",
         )
     if liquidity.status == "CONTRACTING" or cycle.status == "CONTRACTION":
         return (
             "RISK OFF",
             "negative",
-            "Liquidity or cycle has moved into a defensive regime.",
+            f"Defensive regime: {liq_neg + cyc_neg}/{total_metrics} metrics negative.",
             "Reduce risk and protect capital.",
+        )
+    if pos_pct >= 0.80:
+        return (
+            "RISK ON",
+            "positive",
+            f"{total_pos}/{total_metrics} metrics positive — broadly risk-on despite a single dissenter.",
+            "Lean risk-on; one indicator dissenting — size with care.",
         )
     return (
         "SELECTIVE",
         "neutral",
-        "Liquidity and cycle are not fully aligned.",
+        f"Mixed read ({total_pos} positive, {liq_neg + cyc_neg} negative of {total_metrics}).",
         "Stay selective until both dashboards confirm.",
     )
 
@@ -219,10 +285,14 @@ class DashboardService:
     def _dxy_zscore(self, window: int = 60) -> float | None:
         try:
             import yfinance as yf
-            history = yf.Ticker("DX-Y.NYB").history(period="10y", interval="1mo", auto_adjust=False)
-            if history is None or history.empty:
+            # yf.Ticker().history() is unreliable for DX-Y.NYB; yf.download() works.
+            data = yf.download("DX-Y.NYB", period="10y", interval="1mo", auto_adjust=False, progress=False)
+            if data is None or data.empty:
                 return None
-            series = history["Close"].dropna()
+            series = data["Close"]
+            if hasattr(series, "columns"):
+                series = series.iloc[:, 0]
+            series = series.dropna()
             return latest_zscore(series, window)
         except Exception:
             return None
