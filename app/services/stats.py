@@ -76,6 +76,50 @@ def weighted_mean(values: pd.Series, weights: pd.Series) -> float | None:
     return float((v * w).sum() / total_weight)
 
 
+def newey_west_tstat(factor: pd.Series, returns: pd.Series, lag: int = 6) -> float | None:
+    """HAC-adjusted t-stat for a univariate regression of returns on factor.
+
+    Returns None if there is not enough data. Approximates the correlation t-stat
+    after correcting for serial correlation in residuals using a Bartlett kernel
+    of the given lag. lag=6 is the default for monthly macro series — see
+    docs/djg-design-decisions.md §5.
+    """
+    aligned = pd.concat([factor, returns], axis=1).dropna()
+    if len(aligned) < max(lag + 3, 12):
+        return None
+    x = aligned.iloc[:, 0].to_numpy()
+    y = aligned.iloc[:, 1].to_numpy()
+    n = len(x)
+    x_mean = x.mean()
+    y_mean = y.mean()
+    x_centered = x - x_mean
+    y_centered = y - y_mean
+    sx2 = float((x_centered ** 2).sum())
+    if sx2 == 0:
+        return None
+    beta = float((x_centered * y_centered).sum() / sx2)
+    residuals = y_centered - beta * x_centered
+    # u_t = x_centered_t * residual_t — score series. Compute NW long-run variance.
+    u = x_centered * residuals
+    gamma_0 = float((u ** 2).sum() / n)
+    s = gamma_0
+    for lag_k in range(1, lag + 1):
+        if lag_k >= n:
+            break
+        weight = 1.0 - lag_k / (lag + 1)
+        gamma_k = float((u[lag_k:] * u[:-lag_k]).sum() / n)
+        s += 2.0 * weight * gamma_k
+    if s <= 0:
+        return None
+    # var(beta) = (n / sx2^2) * S
+    var_beta = (n / (sx2 ** 2)) * s
+    se_beta = math.sqrt(max(var_beta, 1e-12))
+    if se_beta == 0:
+        return None
+    t = beta / se_beta
+    return max(-_TSTAT_CAP, min(_TSTAT_CAP, float(t)))
+
+
 def weighted_corr(x: pd.Series, y: pd.Series, weights: pd.Series) -> float | None:
     aligned = pd.concat([x, y, weights], axis=1).dropna()
     if len(aligned) < 3:

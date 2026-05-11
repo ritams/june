@@ -10,6 +10,7 @@ from typing import Any
 import pandas as pd
 
 from app.config import Settings
+from app.services.allocation import build_allocation
 from app.services.backtest import (
     ASSET_CLASS_PROXIES,
     ASSET_SPECS,
@@ -18,6 +19,7 @@ from app.services.backtest import (
 )
 from app.services.stats import (
     exponential_weights,
+    newey_west_tstat,
     tstat_from_corr,
     weighted_corr,
     weighted_mean,
@@ -154,6 +156,7 @@ class CorrelationService:
                 "benchmark": benchmark_key,
                 "basis": basis,
                 "ticker": spec["ticker"],
+                "low_history": bool(spec.get("low_history", False)),
             }
 
         # Asset-class proxies (always absolute returns)
@@ -168,6 +171,7 @@ class CorrelationService:
                 "benchmark": None,
                 "basis": "absolute",
                 "ticker": ASSET_SPECS[proxy]["ticker"],
+                "low_history": False,
             }
 
         factors_payload: dict[str, Any] = {}
@@ -221,6 +225,7 @@ class CorrelationService:
             return None
         n = len(aligned)
         t = tstat_from_corr(corr, n)
+        t_hac = newey_west_tstat(aligned["factor"], aligned["ret"], lag=6)
 
         upper = aligned["factor"].quantile(0.75)
         lower = aligned["factor"].quantile(0.25)
@@ -229,12 +234,22 @@ class CorrelationService:
         bull_ret = weighted_mean(aligned.loc[bull_mask, "ret"], weights.loc[bull_mask])
         bear_ret = weighted_mean(aligned.loc[bear_mask, "ret"], weights.loc[bear_mask])
 
+        bull_n = int(bull_mask.sum())
+        bear_n = int(bear_mask.sum())
+        bull_hit = float((aligned.loc[bull_mask, "ret"] > 0).mean()) if bull_n > 0 else None
+        bear_hit = float((aligned.loc[bear_mask, "ret"] < 0).mean()) if bear_n > 0 else None
+
         return {
             "correlation": _round(corr, 3),
             "t_stat": _round(t, 2),
+            "t_stat_hac": _round(t_hac, 2),
             "n": int(n),
             "bull_return": _round((bull_ret or 0.0) * 100, 2),
             "bear_return": _round((bear_ret or 0.0) * 100, 2),
+            "bull_n": bull_n,
+            "bear_n": bear_n,
+            "bull_hit_rate": _round(bull_hit, 2) if bull_hit is not None else None,
+            "bear_hit_rate": _round(bear_hit, 2) if bear_hit is not None else None,
         }
 
     # --- Scenario engine ---
@@ -248,34 +263,90 @@ class CorrelationService:
                 "scenario": scenario,
                 "buckets": {},
                 "heat_map": {},
+                "allocation": {"available": False, "top_assets": [], "bottom_assets": [], "cash_weight": 1.0},
             }
+
+        # Per docs/djg-design-decisions.md §4:
+        #   composite_score = Σ (bull_or_bear_return × |scenario_value| × sign(t) × |t|)
+        #   weighted only on cells where |t_HAC| ≥ MIN_T_FOR_SCORING (else contribute zero)
+        # This matches the documented design — high-conviction signals dominate, noise
+        # cells don't drag the score around.
+        MIN_T_FOR_SCORING = 1.5
 
         assets = cache["assets"]
         scored: dict[str, dict[str, Any]] = {}
         for asset_key, asset in assets.items():
             cells = asset.get("cells", {})
-            weighted_return = 0.0
+            composite_total = 0.0
+            return_total = 0.0
             t_sum = 0.0
-            count = 0
+            t_hac_sum = 0.0
+            t_hac_count = 0
+            scoring_count = 0  # cells that survive the |t|>=1.5 filter and contributed
+            considered_count = 0  # cells with non-zero scenario value (for averaging displays)
+            disclosures: list[dict[str, Any]] = []
             for factor_key, factor_value in scenario.items():
                 cell = cells.get(factor_key)
                 if not cell or factor_value is None:
                     continue
                 value = float(factor_value)
-                if value > 0:
-                    contribution = (cell.get("bull_return") or 0.0) * value
-                elif value < 0:
-                    contribution = (cell.get("bear_return") or 0.0) * abs(value)
-                else:
+                if value == 0:
                     continue
-                weighted_return += contribution
-                t_sum += abs(cell.get("t_stat") or 0.0)
-                count += 1
-            if count == 0:
+                if value > 0:
+                    quartile_return = cell.get("bull_return") or 0.0
+                    hit_rate = cell.get("bull_hit_rate")
+                    quartile_n = cell.get("bull_n")
+                else:
+                    quartile_return = cell.get("bear_return") or 0.0
+                    hit_rate = cell.get("bear_hit_rate")
+                    quartile_n = cell.get("bear_n")
+
+                # Use HAC t-stat for confidence weighting if available (doc §5).
+                t_stat = cell.get("t_stat") or 0.0
+                t_hac = cell.get("t_stat_hac")
+                t_for_weight = t_hac if t_hac is not None else t_stat
+
+                contribution = quartile_return * abs(value)
+                considered_count += 1
+                return_total += contribution
+
+                # quartile_return already carries direction (e.g. bear_return is what the
+                # asset historically did when the factor was at an extreme low). Cells
+                # below the t threshold contribute zero so noise doesn't dilute conviction.
+                t_weighted = 0.0
+                contributing = False
+                if abs(t_for_weight) >= MIN_T_FOR_SCORING:
+                    t_weighted = contribution * abs(t_for_weight)
+                    composite_total += t_weighted
+                    scoring_count += 1
+                    contributing = True
+
+                t_sum += abs(t_stat)
+                if t_hac is not None:
+                    t_hac_sum += abs(t_hac)
+                    t_hac_count += 1
+
+                disclosures.append(
+                    {
+                        "factor": factor_key,
+                        "factor_value": round(value, 2),
+                        "n": cell.get("n"),
+                        "t_stat": t_stat,
+                        "t_stat_hac": t_hac,
+                        "correlation": cell.get("correlation"),
+                        "quartile_return": round(quartile_return, 2),
+                        "expected_contribution": round(contribution, 2),
+                        "t_weighted_contribution": round(t_weighted, 2),
+                        "contributing": contributing,
+                        "hit_rate": hit_rate,
+                        "quartile_n": quartile_n,
+                    }
+                )
+            if considered_count == 0:
                 continue
-            avg_return = weighted_return / count
-            avg_t = t_sum / count
-            composite = avg_return * avg_t
+            avg_return = return_total / considered_count
+            avg_t = t_sum / considered_count
+            avg_t_hac = (t_hac_sum / t_hac_count) if t_hac_count > 0 else None
             scored[asset_key] = {
                 "key": asset_key,
                 "label": asset["label"],
@@ -283,10 +354,14 @@ class CorrelationService:
                 "benchmark": asset.get("benchmark"),
                 "basis": asset.get("basis"),
                 "ticker": asset.get("ticker"),
+                "low_history": bool(asset.get("low_history", False)),
                 "expected_return": round(avg_return, 2),
                 "avg_t_stat": round(avg_t, 2),
-                "composite_score": round(composite, 2),
-                "factors_used": count,
+                "avg_t_stat_hac": round(avg_t_hac, 2) if avg_t_hac is not None else None,
+                "composite_score": round(composite_total, 2),
+                "factors_used": considered_count,
+                "high_confidence_factors_used": scoring_count,
+                "disclosures": disclosures,
             }
 
         buckets: dict[str, dict[str, Any]] = {}
@@ -305,6 +380,7 @@ class CorrelationService:
             bucket["top_by_significance"] = by_significance[:3]
 
         heat_map = self._heat_map(cache)
+        allocation = build_allocation(scored)
 
         return {
             "available": True,
@@ -312,6 +388,11 @@ class CorrelationService:
             "scenario": scenario,
             "buckets": buckets,
             "heat_map": heat_map,
+            "allocation": allocation,
+            "caveat": (
+                "Post-2008 only · 315-cell grid (45 assets × 7 factors) — at p<0.05 single-test "
+                "expect ~16 false positives by chance · regime never tested under sustained credit stress."
+            ),
         }
 
     def _heat_map(self, cache: dict[str, Any]) -> dict[str, Any]:
@@ -323,12 +404,16 @@ class CorrelationService:
                 "bucket": asset["bucket"],
                 "benchmark": asset.get("benchmark"),
                 "basis": asset.get("basis"),
+                "ticker": asset.get("ticker"),
+                "low_history": bool(asset.get("low_history", False)),
             }
             for factor_key in FACTOR_KEYS:
                 cell = asset.get("cells", {}).get(factor_key)
                 row[factor_key] = {
                     "correlation": cell["correlation"] if cell else None,
                     "t_stat": cell["t_stat"] if cell else None,
+                    "t_stat_hac": cell.get("t_stat_hac") if cell else None,
+                    "n": cell.get("n") if cell else None,
                 } if cell else None
             rows.append(row)
         return {

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" shape-rendering="crispEdges">
+  <rect width="32" height="32" rx="4" ry="4" fill="#0a0d10"/>
+  <rect x="2" y="2" width="28" height="28" rx="3" ry="3" fill="none" stroke="#232c34" stroke-width="1"/>
+  <!-- DJG wordmark, chunky monospace caps in DJG yellow -->
+  <g fill="#ffd84a" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-weight="800" font-size="11" letter-spacing="0.5">
+    <text x="4.5" y="20" textLength="23" lengthAdjust="spacingAndGlyphs">DJG</text>
+  </g>
+  <!-- accent underline bar -->
+  <rect x="4" y="23.5" width="24" height="1.5" fill="#ffd84a"/>
+</svg>

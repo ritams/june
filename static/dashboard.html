@@ -3,98 +3,161 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>June | Macro Dashboard</title>
+    <title>DJG Advisory · Cycle-aware allocation</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/static/favicon.svg" />
     <link rel="stylesheet" href="/static/app.css" />
-    <script src="/static/app.js" defer></script>
+    <link rel="stylesheet" href="/static/djg.css" />
+    <script src="/static/djg.js" defer></script>
   </head>
-  <body>
-    <div class="shell">
-      <header class="topbar">
-        <div class="brand">
-          <div class="eyebrow">June dashboard</div>
-          <h1 class="title">Macro dashboard</h1>
-          <p class="subtitle">One signal at the top, then liquidity and business-cycle inputs underneath it.</p>
+  <body class="djg" data-page="djg">
+    <div class="djg-shell">
+      <header class="djg-topbar">
+        <div class="djg-wordmark">
+          <span class="djg-mark">DJG</span><span class="djg-advisory">ADVISORY</span>
         </div>
+        <p class="djg-tagline">Cycle-aware allocation across every asset class</p>
+        <nav class="djg-nav">
+          <a class="active" href="/dashboard">Allocation</a>
+          <a href="/liquidity">Liquidity</a>
+          <a href="/business-cycle">Cycle</a>
+        </nav>
       </header>
 
-      <main class="dashboard-layout">
-        <section class="hero">
-          <div class="hero-story">
-            <div class="signal-row">
-              <div class="signal-badge" data-signal-badge>Loading</div>
-              <div class="signal-note">Full macro build</div>
-            </div>
-            <div class="hero-copy">
-              <div class="eyebrow eyebrow-inverse">Top signal</div>
-              <h2 data-signal-heading>Loading</h2>
-              <p data-signal-summary>Waiting for live data.</p>
-              <p class="signal-action" data-signal-action></p>
-            </div>
+      <section class="djg-headline" aria-label="Phase and signal">
+        <div class="djg-phase" data-phase-card>
+          <div class="djg-row-label">CURRENT PHASE</div>
+          <div class="djg-phase-badge" data-phase-badge>—</div>
+          <div class="djg-phase-detail">
+            <span data-phase-blurb>Loading…</span>
           </div>
-          <div class="hero-side">
-            <article class="meta-card">
-              <p class="meta-description">Liquidity, funding, cycle, and trade inputs scored into one live risk read instead of split dashboards.</p>
-              <dl>
-                <div>
-                  <dt>Last update</dt>
-                  <dd data-updated-at>Loading</dd>
-                </div>
-                <div>
-                  <dt>Cadence</dt>
-                  <dd>15-minute live refresh</dd>
-                </div>
-                <div class="meta-span">
-                  <dt>Scope</dt>
-                  <dd>DXY, M2, RRP, TGA, Fed balance sheet, ISM, curve, credit, claims, Korean exports, and the Global M2 proxy.</dd>
-                </div>
-              </dl>
-            </article>
-            <article class="meta-bar">
-              <span class="mini-chip">FRED</span>
-              <span class="mini-chip">yfinance</span>
-              <span class="mini-chip">Perplexity optional</span>
-              <span class="mini-chip">Telegram + Sheets</span>
-            </article>
+          <div class="djg-phase-meta">
+            <span class="djg-meta-row">G <em data-phase-growth>—</em></span>
+            <span class="djg-meta-row">I <em data-phase-inflation>—</em></span>
+            <span class="djg-meta-row">L <em data-phase-liquidity>—</em></span>
+            <span class="djg-meta-row" data-phase-confirmation>—</span>
           </div>
-        </section>
+        </div>
+        <div class="djg-signal" data-signal-card>
+          <div class="djg-row-label">SIGNAL</div>
+          <div class="djg-signal-badge" data-signal-badge>—</div>
+          <div class="djg-signal-detail" data-signal-summary>Loading…</div>
+          <div class="djg-signal-action" data-signal-action></div>
+          <div class="djg-meta-row">Updated <em data-updated-at>—</em></div>
+        </div>
+      </section>
 
-        <section class="dashboard-panel">
-          <div class="panel-header">
-            <div>
-              <div class="eyebrow">Section 1</div>
-              <h3>Liquidity</h3>
-              <p class="panel-copy" data-liquidity-summary>Waiting for live data.</p>
-            </div>
-            <div class="panel-status" data-liquidity-status>Loading</div>
+      <section class="djg-panel" aria-label="Allocation">
+        <header class="djg-panel-head">
+          <span class="djg-panel-num">01</span>
+          <h2>Optimal Allocation</h2>
+          <span class="djg-panel-aside" data-allocation-tau>τ —</span>
+        </header>
+        <div class="djg-alloc-table" data-allocation-top>
+          <div class="djg-alloc-header">
+            <span>#</span><span>ASSET</span><span class="num">WEIGHT</span><span class="num">E[R]</span><span class="num">T-HAC</span><span>CONF</span>
           </div>
-          <div class="metric-grid" data-liquidity-metrics></div>
-        </section>
+          <div class="djg-alloc-empty" data-allocation-empty>Calculating…</div>
+        </div>
+        <div class="djg-alloc-cash">
+          <span>CASH</span>
+          <span class="num" data-allocation-cash>—</span>
+        </div>
+        <details class="djg-alloc-bottom">
+          <summary>Bottom 5 to avoid</summary>
+          <div data-allocation-bottom></div>
+        </details>
+      </section>
 
-        <section class="dashboard-panel">
-          <div class="panel-header">
-            <div>
-              <div class="eyebrow">Section 2</div>
-              <h3>Business Cycle</h3>
-              <p class="panel-copy" data-cycle-summary>Waiting for live data.</p>
-            </div>
-            <div class="panel-status" data-cycle-status>Loading</div>
-          </div>
-          <div class="metric-grid" data-cycle-metrics></div>
-        </section>
+      <section class="djg-panel" aria-label="Live macro factors">
+        <header class="djg-panel-head">
+          <span class="djg-panel-num">02</span>
+          <h2>Live Macro Factors</h2>
+          <span class="djg-panel-aside">Z-score · 60m</span>
+        </header>
+        <div class="djg-factor-grid" data-factor-grid></div>
+      </section>
 
-        <section class="footer-panel">
-          <div class="footer-copy">
-            <div class="eyebrow">Operations</div>
-            <p>Refresh the live snapshot, push the current macro card, and verify which integrations are active.</p>
-          </div>
-          <div class="actions">
-            <button class="button" type="button" data-refresh>Refresh now</button>
-            <button class="button secondary" type="button" data-send-card>Send daily card</button>
-          </div>
-          <div class="footer-grid" data-integrations></div>
-          <div class="notice" data-notice></div>
-        </section>
-      </main>
+      <section class="djg-panel" aria-label="Sector heat map">
+        <header class="djg-panel-head">
+          <span class="djg-panel-num">03</span>
+          <h2>Heat Map · 45 assets</h2>
+          <span class="djg-panel-aside" data-heatmap-mode>Composite</span>
+        </header>
+        <div class="djg-heatmap-controls">
+          <button class="djg-pill" data-heatmap-toggle="composite">Composite</button>
+          <button class="djg-pill" data-heatmap-toggle="t_hac">T-stat (HAC)</button>
+          <button class="djg-pill" data-heatmap-toggle="weight">Weight</button>
+        </div>
+        <div class="djg-heatmap" data-heatmap-grid></div>
+        <div class="djg-heatmap-legend">
+          <span class="djg-legend-cell neg-strong"></span>
+          <span class="djg-legend-cell neg"></span>
+          <span class="djg-legend-cell flat"></span>
+          <span class="djg-legend-cell pos"></span>
+          <span class="djg-legend-cell pos-strong"></span>
+          <span class="djg-legend-text">avoid → favor</span>
+        </div>
+      </section>
+
+      <section class="djg-panel" aria-label="Manual scenario">
+        <header class="djg-panel-head">
+          <span class="djg-panel-num">04</span>
+          <h2>Stress Test</h2>
+          <span class="djg-panel-aside" data-scenario-mode>Live</span>
+        </header>
+        <div class="djg-scenario-actions">
+          <button class="djg-pill djg-pill-action" data-scenario-auto>Auto-fill from live</button>
+          <button class="djg-pill djg-pill-action" data-scenario-reset>Reset to neutral</button>
+          <select class="djg-pill djg-pill-action" data-scenario-preset>
+            <option value="">Preset…</option>
+          </select>
+        </div>
+        <div class="djg-sliders" data-scenario-sliders></div>
+      </section>
+
+      <section class="djg-panel" aria-label="High-conviction signals">
+        <header class="djg-panel-head">
+          <span class="djg-panel-num">05</span>
+          <h2>High Conviction</h2>
+          <span class="djg-panel-aside">T ≥ 3.0 (HAC)</span>
+        </header>
+        <div class="djg-conviction" data-conviction-list>Loading…</div>
+      </section>
+
+      <footer class="djg-footer">
+        <p class="djg-caveat" data-caveat>
+          Post-2008 only · 315-cell grid · regime never tested under sustained credit stress.
+        </p>
+        <p class="djg-versions">
+          Matrix recomputed <em data-matrix-date>—</em> · Backtest <em data-backtest-date>—</em>
+        </p>
+        <p class="djg-versions">DJG Advisory · Cycle-aware allocation across every asset class</p>
+      </footer>
     </div>
+
+    <aside class="djg-drawer" data-drawer hidden>
+      <div class="djg-drawer-backdrop" data-drawer-close></div>
+      <div class="djg-drawer-panel">
+        <button class="djg-drawer-x" data-drawer-close aria-label="Close">×</button>
+        <header class="djg-drawer-head">
+          <div class="djg-row-label" data-drawer-bucket>—</div>
+          <h3 data-drawer-title>—</h3>
+          <p class="djg-drawer-sub" data-drawer-sub>—</p>
+        </header>
+        <div class="djg-drawer-stats" data-drawer-stats></div>
+        <table class="djg-drawer-cells" data-drawer-cells>
+          <thead>
+            <tr><th>Factor</th><th>Corr</th><th>T-HAC</th><th>Bull %</th><th>Bear %</th><th>N</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p class="djg-drawer-caveat">
+          Post-2008 only. Returns are quartile-conditional means, weighted exponentially with a 10y half-life.
+        </p>
+      </div>
+    </aside>
+
+    <div class="djg-toast" data-toast hidden></div>
   </body>
 </html>

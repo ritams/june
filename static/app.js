@@ -147,17 +147,19 @@ function renderPlaybookTable(card) {
     .join("");
 
   return `
-    <table class="playbook-table">
-      <thead>
-        <tr>
-          <th>Asset</th>
-          ${headers}
-          <th>Win%(1yr)</th>
-          <th>T-stat(1yr)</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
+    <div class="playbook-table-wrap">
+      <table class="playbook-table">
+        <thead>
+          <tr>
+            <th>Asset</th>
+            ${headers}
+            <th>Win%(1yr)</th>
+            <th>T-stat(1yr)</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
   `;
 }
 

@@ -27,9 +27,10 @@ HORIZONS = {
 _HIGH = {"tone": "positive", "label": "HIGH", "description": "20+ complete cycles"}
 _MED = {"tone": "neutral", "label": "MEDIUM", "description": "Shorter ETF history"}
 _LOW = {"tone": "negative", "label": "LOW", "description": "Direction only, never sizing"}
+_LIMITED = {"tone": "negative", "label": "LIMITED", "description": "Short post-2008 history; included with low_history flag"}
 
 
-def _spec(ticker, label, bucket, *, start="2008-01-01", since=None, benchmark=None, confidence=None):
+def _spec(ticker, label, bucket, *, start="2008-01-01", since=None, benchmark=None, confidence=None, low_history=False):
     return {
         "ticker": ticker,
         "label": label,
@@ -38,6 +39,7 @@ def _spec(ticker, label, bucket, *, start="2008-01-01", since=None, benchmark=No
         "since": since or start[:4],
         "benchmark": benchmark,
         "confidence": confidence or _MED,
+        "low_history": low_history,
     }
 
 
@@ -53,6 +55,8 @@ ASSET_SPECS = {
     "EWU": _spec("EWU", "UK", "equity_region", start="2000-01-01", benchmark="ACWI", confidence=_HIGH),
     "EWL": _spec("EWL", "Switzerland", "equity_region", start="2000-01-01", benchmark="ACWI", confidence=_HIGH),
     "EWZ": _spec("EWZ", "Brazil", "equity_region", start="2000-07-01", benchmark="ACWI", confidence=_HIGH),
+    "EWA": _spec("EWA", "Australia", "equity_region", start="2000-01-01", benchmark="ACWI", confidence=_HIGH),
+    "EWW": _spec("EWW", "Mexico", "equity_region", start="2000-01-01", benchmark="ACWI", confidence=_HIGH),
 
     # Equity sectors (vs ACWI)
     "XLK": _spec("XLK", "Technology", "equity_sector", start="2000-01-01", benchmark="ACWI", confidence=_HIGH),
@@ -86,6 +90,7 @@ ASSET_SPECS = {
     "USO": _spec("USO", "Oil", "commodity", start="2006-04-01", benchmark="GSG", confidence=_MED),
     "DBA": _spec("DBA", "Agriculture", "commodity", start="2007-01-01", benchmark="GSG", confidence=_MED),
     "DJP": _spec("DJP", "Broad Commodities", "commodity", start="2006-06-01", benchmark="GSG", confidence=_MED),
+    "HPS-A.TO": _spec("HPS-A.TO", "Hammond Power (TSX)", "commodity", start="2010-01-01", benchmark="GSG", confidence=_LIMITED, low_history=True),
 
     # Style factors (vs ACWI)
     "IWF": _spec("IWF", "US Growth", "style", start="2000-05-01", benchmark="ACWI", confidence=_HIGH),

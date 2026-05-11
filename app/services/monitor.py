@@ -21,6 +21,7 @@ class MonitorService:
         sheets: SheetsClient,
         state_store: StateStore,
         correlation_service=None,
+        phase_service=None,
     ) -> None:
         self.settings = settings
         self.dashboard_service = dashboard_service
@@ -28,9 +29,22 @@ class MonitorService:
         self.sheets = sheets
         self.state_store = state_store
         self.correlation_service = correlation_service
+        self.phase_service = phase_service
+
+    def run_daily_refresh(self) -> dict:
+        """Full data refresh — pulls fresh FRED + yfinance data. Called once daily."""
+        snapshot = self.dashboard_service.get_snapshot(force=True)
+        # Phase service caches for 12h; force its recompute to align with the daily window.
+        if self.phase_service is not None:
+            try:
+                self.phase_service.get(force=True)
+            except Exception:
+                pass
+        return {"ok": True, "generated_at": snapshot.get("generated_at")}
 
     def run_alert_checks(self) -> list[str]:
-        snapshot = self.dashboard_service.get_snapshot(force=True)
+        # Crossing detection on the cached snapshot — daily refresh handles the actual pull.
+        snapshot = self.dashboard_service.get_snapshot(force=False)
         state = self.state_store.load()
         alerts = state.get("alerts", {})
         messages: list[str] = []
@@ -80,6 +94,30 @@ class MonitorService:
             if crossed:
                 messages.append(message)
                 self._safe_telegram_send(message)
+
+        # Top-level signal flip (RISK ON / SELECTIVE / RISK OFF)
+        signal_label = snapshot["signal"]["label"]
+        previous_signal = state.get("signal_label")
+        if previous_signal and previous_signal != signal_label:
+            msg = f"DJG SIGNAL FLIP: {previous_signal} → {signal_label}. {snapshot['signal'].get('action', '')}"
+            messages.append(msg)
+            self._safe_telegram_send(msg)
+        state["signal_label"] = signal_label
+
+        # Cycle phase flip (Spring/Summer/Autumn/Winter)
+        if self.phase_service is not None:
+            try:
+                phase = self.phase_service.get(force=False)
+                phase_key = phase.key
+                previous_phase = state.get("phase_key")
+                if phase.confirmed and previous_phase and previous_phase != phase_key:
+                    msg = f"PHASE CHANGE: {previous_phase.title()} → {phase.label}. {phase.blurb}"
+                    messages.append(msg)
+                    self._safe_telegram_send(msg)
+                if phase.confirmed:
+                    state["phase_key"] = phase_key
+            except Exception:
+                pass
 
         state["alerts"] = alerts
         self.state_store.save(state)
@@ -167,7 +205,7 @@ class MonitorService:
         liquidity_metrics = {metric["key"]: metric for metric in liquidity["metrics"]}
         cycle_metrics = {metric["key"]: metric for metric in cycle["metrics"]}
         lines = [
-            f"MACRO DASHBOARD - {datetime.now(ZoneInfo(self.settings.display_timezone)).date().isoformat()}",
+            f"DJG ADVISORY · DAILY · {datetime.now(ZoneInfo(self.settings.display_timezone)).date().isoformat()}",
             "",
             f"LIQUIDITY: {liquidity['status']}",
             self._card_line(liquidity_metrics["m2"]),

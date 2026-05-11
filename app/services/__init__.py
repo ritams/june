@@ -1,1 +1,1 @@
-"""Service layer for June."""
+"""Service layer for DJG Advisory."""

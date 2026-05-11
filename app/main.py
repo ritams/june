@@ -13,6 +13,7 @@ from app.services.backtest import BacktestService
 from app.services.correlations import FACTOR_KEYS, SCENARIO_PRESETS, CorrelationService
 from app.services.dashboard import DashboardService
 from app.services.monitor import MonitorService
+from app.services.phase import PhaseService
 from app.services.scenario_inputs import auto_fill_scenario
 from app.services.sheets import SheetsClient
 from app.services.state import StateStore
@@ -23,6 +24,7 @@ settings = get_settings()
 dashboard_service = DashboardService(settings)
 backtest_service = BacktestService(settings, fred=dashboard_service.fred)
 correlation_service = CorrelationService(settings, backtest_service)
+phase_service = PhaseService(backtest_service)
 telegram_client = TelegramClient(settings.telegram_bot_token, settings.telegram_chat_id)
 sheets_client = SheetsClient(
     spreadsheet_id=settings.google_sheet_id,
@@ -37,9 +39,10 @@ monitor_service = MonitorService(
     sheets_client,
     state_store,
     correlation_service=correlation_service,
+    phase_service=phase_service,
 )
 
-app = FastAPI(title="June Dashboard", version="0.1.0")
+app = FastAPI(title="DJG Advisory", version="0.2.0")
 app.mount("/static", StaticFiles(directory=str(ROOT_DIR / "static")), name="static")
 scheduler = BackgroundScheduler(timezone=settings.app_timezone)
 
@@ -56,7 +59,10 @@ def start_scheduler() -> None:
         return
     if scheduler.running:
         return
+    # 15-min crossing detection on the cached snapshot — cheap, no external calls beyond the cache.
     scheduler.add_job(monitor_service.run_alert_checks, "interval", minutes=settings.refresh_interval_minutes)
+    # Daily full data pull — replaces 15-min force-refreshes (macro is daily/weekly anyway).
+    scheduler.add_job(monitor_service.run_daily_refresh, "cron", hour=6, minute=30)
     hour, minute = settings.daily_card_time.split(":")
     scheduler.add_job(monitor_service.send_daily_card, "cron", hour=int(hour), minute=int(minute))
     scheduler.add_job(backtest_service.refresh_cache, "cron", day_of_week="sun", hour=6, minute=0)
@@ -80,7 +86,12 @@ def stop_scheduler() -> None:
 
 @app.get("/", include_in_schema=False)
 def root() -> RedirectResponse:
-    return RedirectResponse(url="/liquidity")
+    return RedirectResponse(url="/dashboard")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> FileResponse:
+    return FileResponse(ROOT_DIR / "static" / "favicon.svg", media_type="image/svg+xml")
 
 
 @app.get("/dashboard", include_in_schema=False)
@@ -120,6 +131,10 @@ def snapshot(force: bool = False) -> dict:
         "last_calculated": backtest_service.cache_status().last_calculated,
         "stale": backtest_service.cache_status().stale,
     }
+    try:
+        data["phase"] = phase_service.get(force=force).to_dict()
+    except Exception as exc:  # pragma: no cover — surface error without breaking snapshot
+        data["phase"] = {"key": "unknown", "label": "Unknown", "blurb": str(exc)[:160]}
     return data
 
 
@@ -223,7 +238,11 @@ def scenario(
 ) -> dict:
     if auto:
         snapshot = dashboard_service.get_snapshot(force=False)
-        scenario_input = auto_fill_scenario(snapshot, backtest_service)
+        try:
+            scenario_input = auto_fill_scenario(snapshot, backtest_service)
+        except Exception:
+            # Upstream FRED/yfinance flake — fall back to neutral so the dashboard still renders.
+            scenario_input = {factor: 0.0 for factor in FACTOR_KEYS}
     else:
         raw = {
             "risk_on_off": risk_on_off,

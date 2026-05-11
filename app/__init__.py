@@ -1,1 +1,1 @@
-"""June dashboard package."""
+"""DJG Advisory dashboard package."""
