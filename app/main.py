@@ -68,7 +68,24 @@ def start_scheduler() -> None:
     scheduler.add_job(backtest_service.refresh_cache, "cron", day_of_week="sun", hour=6, minute=0)
     scheduler.add_job(correlation_service.refresh_cache, "cron", day=1, hour=6, minute=30)
     scheduler.add_job(monitor_service.run_regime_change_check, "cron", hour=hour_or_six(settings.daily_card_time), minute=0)
+
+    # Steno PDF download + extraction — once a day at STENO_PIPELINE_TIME (HH:MM, default 07:00).
+    # New Real Vision reports typically land overnight London time, so a morning pull catches them.
+    # The same pipeline can be triggered ad-hoc via POST /api/steno/refresh from the dashboard.
+    _schedule_steno_daily(scheduler)
     scheduler.start()
+
+
+def _schedule_steno_daily(sched) -> None:
+    import os
+    from app.services.steno import pipeline as _pipeline
+    raw = os.getenv("STENO_PIPELINE_TIME", "07:00").strip()
+    try:
+        h_str, m_str = raw.split(":")
+        h, m = int(h_str), int(m_str)
+    except Exception:
+        h, m = 7, 0
+    sched.add_job(_pipeline.run_pipeline, "cron", hour=h, minute=m, id="steno_daily", replace_existing=True)
 
 
 def hour_or_six(card_time: str) -> int:
@@ -107,6 +124,108 @@ def liquidity_page() -> FileResponse:
 @app.get("/business-cycle", include_in_schema=False)
 def business_cycle_page() -> FileResponse:
     return _static_page("business-cycle.html")
+
+
+@app.get("/steno", include_in_schema=False)
+def steno_page() -> FileResponse:
+    return _static_page("steno.html")
+
+
+# ── Steno + IBKR mirror endpoints ──────────────────────────────────────────────
+
+@app.get("/api/steno/portfolio")
+def steno_portfolio() -> dict:
+    from app.services.steno import store as _store
+    latest = _store.get_latest()
+    if not latest:
+        return {"available": False, "reason": "No Steno portfolio ingested yet."}
+    return {"available": True, "portfolio": latest, "history_count": len(_store.get_history())}
+
+
+@app.post("/api/steno/refresh")
+def steno_refresh(download_new: bool = True, force_reingest: bool = False) -> dict:
+    """Kick off the Steno pipeline asynchronously. Returns immediately with the
+    refresh-state snapshot. Poll /api/steno/refresh-status for progress."""
+    from app.services.steno import pipeline as _pipeline
+    return _pipeline.run_pipeline_async(download_new=download_new, force_reingest=force_reingest)
+
+
+@app.get("/api/steno/refresh-status")
+def steno_refresh_status() -> dict:
+    from app.services.steno import pipeline as _pipeline
+    return _pipeline.load_refresh_state()
+
+
+@app.post("/api/steno/resolve-tickers")
+def steno_resolve_tickers(force: bool = False) -> dict:
+    """Run Perplexity ticker resolution on the latest committed portfolio.
+
+    Use force=true to retry positions that previously came back as unresolved or
+    to override a cached resolution.
+    """
+    from app.services.steno import pipeline as _pipeline
+    return _pipeline.resolve_latest_tickers(force=force)
+
+
+@app.post("/api/steno/ingest-cached")
+def steno_ingest_cached(force: bool = False) -> dict:
+    """Ingest already-downloaded PDFs without hitting Real Vision. Useful for testing
+    and for situations where the PDFs were brought in via scp/sftp instead of scraped."""
+    from app.services.steno import pipeline as _pipeline
+    return _pipeline.run_pipeline(download_new=False, force_reingest=force)
+
+
+@app.get("/api/ibkr/portfolio")
+def ibkr_portfolio() -> dict:
+    from app.services.ibkr import store as _store
+    snapshot = _store.load_snapshot()
+    age = _store.snapshot_age_seconds()
+    return {
+        "available": snapshot is not None,
+        "age_seconds": age,
+        "snapshot": snapshot,
+    }
+
+
+@app.post("/api/ibkr/refresh")
+def ibkr_refresh() -> dict:
+    from app.services.ibkr import flex as _flex
+    from app.services.ibkr import store as _store
+    try:
+        snap = _flex.fetch_snapshot()
+    except _flex.IBKRFlexError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    data = snap.to_dict()
+    _store.save_snapshot(data)
+    return {"ok": True, "fetched_at": data["fetched_at"], "positions": len(data["positions"])}
+
+
+@app.get("/api/mirror")
+def mirror_payload(tolerance: float | None = None) -> dict:
+    from app.services.mirror import build_mirror, DEFAULT_TOLERANCE_PCT
+    tol = tolerance if tolerance is not None else DEFAULT_TOLERANCE_PCT
+    return build_mirror(tolerance_pct=tol)
+
+
+@app.post("/api/mirror/override")
+def mirror_set_override(ticker: str, bucket: str | None = None, clear: bool = False) -> dict:
+    """Pin a Dan ticker to a specific Steno bucket (or mark off-thesis explicitly).
+
+    Pass `clear=true` to remove the override and fall back to auto-classification.
+    Pass `bucket=` empty / null to explicitly mark the ticker off-thesis.
+    """
+    from app.services.steno import bucket_classifier as _bc
+    if clear:
+        overrides = _bc.clear_override(ticker)
+    else:
+        overrides = _bc.set_override(ticker, bucket or None)
+    return {"ok": True, "overrides": overrides}
+
+
+@app.get("/api/mirror/overrides")
+def mirror_list_overrides() -> dict:
+    from app.services.steno import bucket_classifier as _bc
+    return {"overrides": _bc.load_overrides()}
 
 
 @app.get("/api/health")

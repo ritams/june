@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DJG Advisory · Steno Mirror</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/static/djg.css" />
+    <link rel="stylesheet" href="/static/steno.css" />
+    <script src="/static/steno.js" defer></script>
+  </head>
+  <body class="djg" data-page="steno">
+    <div class="djg-shell">
+      <header class="djg-topbar">
+        <div class="djg-wordmark">
+          <span class="djg-mark">DJG</span><span class="djg-advisory">ADVISORY</span>
+        </div>
+        <p class="djg-tagline">Steno model portfolio · mirror to IBKR</p>
+        <nav class="djg-nav">
+          <a href="/dashboard">Allocation</a>
+          <a href="/liquidity">Liquidity</a>
+          <a href="/business-cycle">Cycle</a>
+          <a class="active" href="/steno">Steno Mirror</a>
+        </nav>
+      </header>
+
+      <section class="djg-headline">
+        <div class="djg-phase" data-steno-card>
+          <div class="djg-row-label">STENO MODEL</div>
+          <div class="djg-phase-badge" data-steno-tone>—</div>
+          <div class="djg-phase-detail">
+            <span data-steno-summary>Waiting for Steno data…</span>
+          </div>
+          <div class="djg-phase-meta">
+            <span class="djg-meta-row">Report <em data-steno-date>—</em></span>
+            <span class="djg-meta-row">Positions <em data-steno-count>—</em></span>
+            <span class="djg-meta-row" data-steno-cash></span>
+          </div>
+        </div>
+        <div class="djg-signal" data-mirror-card>
+          <div class="djg-row-label">ALIGNMENT</div>
+          <div class="djg-signal-badge" data-alignment-pct>—</div>
+          <div class="djg-signal-detail" data-alignment-detail>Waiting for IBKR snapshot…</div>
+          <div class="djg-signal-action" data-mirror-capital></div>
+          <div class="djg-meta-row">NAV <em data-nav>—</em> · IBKR <em data-ibkr-state>—</em></div>
+        </div>
+      </section>
+
+      <section class="djg-panel" aria-label="Action breakdown">
+        <header class="djg-panel-head">
+          <span class="djg-panel-num">01</span>
+          <h2>Action Breakdown</h2>
+          <span class="djg-panel-aside" data-tolerance>± tol</span>
+        </header>
+        <div class="steno-actions" data-action-tiles></div>
+      </section>
+
+      <section class="djg-panel" aria-label="Alignment signals">
+        <header class="djg-panel-head">
+          <span class="djg-panel-num">02</span>
+          <h2>Alignment Signals</h2>
+          <span class="djg-panel-aside" data-signal-count>0 positions</span>
+        </header>
+        <div class="steno-table" data-signals-table>
+          <div class="steno-row steno-header">
+            <span class="col-action">ACTION</span>
+            <span class="col-name">POSITION</span>
+            <span class="col-num">STENO%</span>
+            <span class="col-num">YOU%</span>
+            <span class="col-num">GAP%</span>
+            <span class="col-num">$ TO MOVE</span>
+          </div>
+          <div class="steno-empty" data-signals-empty>Loading…</div>
+        </div>
+      </section>
+
+      <section class="djg-panel" aria-label="Macro notes">
+        <header class="djg-panel-head">
+          <span class="djg-panel-num">03</span>
+          <h2>Steno Macro Notes</h2>
+          <span class="djg-panel-aside">latest report</span>
+        </header>
+        <ul class="steno-macro-notes" data-macro-notes>
+          <li class="steno-macro-empty">No macro notes extracted.</li>
+        </ul>
+      </section>
+
+      <section class="djg-panel" aria-label="Operations">
+        <header class="djg-panel-head">
+          <span class="djg-panel-num">04</span>
+          <h2>Operations</h2>
+          <span class="djg-panel-aside">Manual triggers</span>
+        </header>
+        <div class="djg-ops-actions">
+          <button class="djg-pill djg-pill-action" type="button" data-action-ibkr-refresh>Refresh IBKR</button>
+          <button class="djg-pill djg-pill-action" type="button" data-action-steno-refresh>Pull new Steno PDFs</button>
+          <button class="djg-pill djg-pill-action" type="button" data-action-steno-cached>Re-ingest cached PDFs</button>
+          <button class="djg-pill djg-pill-action" type="button" data-action-resolve-tickers>Resolve theme tickers (AI)</button>
+        </div>
+        <div class="djg-ops-notice" data-ops-notice></div>
+      </section>
+
+      <footer class="djg-footer">
+        <p class="djg-caveat">
+          Read-only IBKR Flex snapshot · Steno PDFs extracted by Claude vision · dry-run signals only — no orders are placed.
+        </p>
+        <p class="djg-versions">
+          Steno report <em data-footer-steno>—</em> · IBKR fetched <em data-footer-ibkr>—</em>
+        </p>
+        <p class="djg-versions">DJG Advisory · Cycle-aware allocation across every asset class</p>
+      </footer>
+    </div>
+
+    <aside class="djg-drawer" data-drawer hidden>
+      <div class="djg-drawer-backdrop" data-drawer-close></div>
+      <div class="djg-drawer-panel">
+        <button class="djg-drawer-x" data-drawer-close aria-label="Close">×</button>
+        <header class="djg-drawer-head">
+          <div class="djg-row-label" data-drawer-action>—</div>
+          <h3 data-drawer-title>—</h3>
+          <p class="djg-drawer-sub" data-drawer-sub>—</p>
+        </header>
+        <div class="djg-drawer-stats" data-drawer-stats></div>
+        <p class="steno-drawer-commentary" data-drawer-commentary>—</p>
+        <div class="drawer-warnings" data-drawer-warnings style="display:none"></div>
+        <div class="drawer-members" data-drawer-members></div>
+        <p class="djg-drawer-caveat">
+          Steno target weight × current NAV − Dan's current market value = capital to move.
+          Tolerance band is configurable; only signals above the band become Buy/Add/Trim/Sell.
+        </p>
+      </div>
+    </aside>
+
+    <div class="djg-toast" data-toast hidden></div>
+
+    <div class="djg-spinner-overlay" data-spinner>
+      <div class="djg-spinner" aria-hidden="true"></div>
+      <div class="djg-spinner-text" data-spinner-text>Loading Steno mirror…</div>
+    </div>
+  </body>
+</html>

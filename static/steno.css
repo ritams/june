@@ -1,0 +1,355 @@
+/* DJG Steno Mirror — uses djg.css tokens. */
+
+.steno-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+@media (min-width: 480px) { .steno-actions { grid-template-columns: repeat(4, 1fr); } }
+@media (min-width: 720px) { .steno-actions { grid-template-columns: repeat(7, 1fr); } }
+
+.steno-action-tile {
+  background: var(--djg-bg-3);
+  border: 1px solid var(--djg-line-soft);
+  border-left-width: 3px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--djg-mono);
+}
+.steno-action-tile .label {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--djg-text-muted);
+  text-transform: uppercase;
+}
+.steno-action-tile .count {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.steno-action-tile[data-action="Buy"]     { border-left-color: var(--djg-pos-strong); }
+.steno-action-tile[data-action="Add"]     { border-left-color: var(--djg-pos); }
+.steno-action-tile[data-action="Hold"]    { border-left-color: var(--djg-flat); }
+.steno-action-tile[data-action="Trim"]    { border-left-color: var(--djg-warn); }
+.steno-action-tile[data-action="Sell"]    { border-left-color: var(--djg-neg-strong); }
+.steno-action-tile[data-action="Remove"]  { border-left-color: var(--djg-neg); }
+.steno-action-tile[data-action="Missing"] { border-left-color: var(--phase-autumn); }
+
+/* Signals table */
+.steno-table {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+  font-family: var(--djg-mono);
+  font-size: 11px;
+}
+.steno-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 52px 48px 48px 70px;
+  gap: 4px 6px;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--djg-bg-3);
+  border: 1px solid var(--djg-line-soft);
+  border-left-width: 3px;
+  cursor: pointer;
+}
+@media (min-width: 720px) {
+  .steno-row {
+    grid-template-columns: 64px minmax(0, 1fr) 70px 64px 64px 90px;
+    gap: 6px 10px;
+    font-size: 12px;
+  }
+}
+.steno-row.steno-header {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--djg-line);
+  border-radius: 0;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--djg-text-muted);
+  text-transform: uppercase;
+  cursor: default;
+  padding-bottom: 6px;
+}
+/* Numeric headers right-align with their data columns */
+.steno-row.steno-header .col-num { text-align: right; }
+.steno-row .col-num { text-align: right; }
+.steno-row .col-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.steno-row .col-name strong { display: block; font-weight: 600; letter-spacing: 0.02em; }
+.steno-row .col-name .sub { display: block; font-size: 9px; color: var(--djg-text-muted); letter-spacing: 0.04em; }
+.steno-row .col-action {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-align: center;
+}
+.steno-row[data-action="Buy"]     .col-action { background: rgba(34,197,94,0.18); color: var(--djg-pos-strong); }
+.steno-row[data-action="Buy"]                  { border-left-color: var(--djg-pos-strong); }
+.steno-row[data-action="Add"]     .col-action { background: rgba(74,222,128,0.18); color: var(--djg-pos); }
+.steno-row[data-action="Add"]                  { border-left-color: var(--djg-pos); }
+.steno-row[data-action="Hold"]    .col-action { background: rgba(139,150,160,0.16); color: var(--djg-text-muted); }
+.steno-row[data-action="Hold"]                 { border-left-color: var(--djg-flat); }
+.steno-row[data-action="Trim"]    .col-action { background: rgba(251,191,36,0.18); color: var(--djg-warn); }
+.steno-row[data-action="Trim"]                 { border-left-color: var(--djg-warn); }
+.steno-row[data-action="Sell"]    .col-action { background: rgba(239,68,68,0.22); color: var(--djg-neg-strong); }
+.steno-row[data-action="Sell"]                 { border-left-color: var(--djg-neg-strong); }
+.steno-row[data-action="Remove"]  .col-action { background: rgba(248,113,113,0.18); color: var(--djg-neg); }
+.steno-row[data-action="Remove"]               { border-left-color: var(--djg-neg); }
+.steno-row[data-action="Missing"] .col-action { background: rgba(249,115,22,0.18); color: var(--phase-autumn); }
+.steno-row[data-action="Missing"]              { border-left-color: var(--phase-autumn); }
+.steno-row .col-direction-short::after { content: " ↓"; color: var(--djg-neg); }
+.steno-row .gap-pos { color: var(--djg-pos); }
+.steno-row .gap-neg { color: var(--djg-neg); }
+.steno-row:hover, .steno-row:focus-within {
+  outline: 1px solid var(--djg-accent);
+  outline-offset: -1px;
+}
+.steno-empty {
+  grid-column: 1 / -1;
+  padding: 24px 8px;
+  text-align: center;
+  font-family: var(--djg-mono);
+  font-size: 11px;
+  color: var(--djg-text-muted);
+}
+
+/* Macro notes */
+.steno-macro-notes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.steno-macro-notes li {
+  background: var(--djg-bg-3);
+  border: 1px solid var(--djg-line-soft);
+  padding: 8px 10px;
+  font-family: var(--djg-mono);
+  font-size: 11px;
+  color: var(--djg-text-dim);
+  line-height: 1.4;
+}
+.steno-macro-notes li.steno-macro-empty {
+  color: var(--djg-text-muted);
+  text-align: center;
+  font-style: italic;
+}
+
+/* Drawer */
+.steno-drawer-commentary {
+  font-family: var(--djg-mono);
+  font-size: 12px;
+  color: var(--djg-text-dim);
+  line-height: 1.5;
+  background: var(--djg-bg-3);
+  border: 1px solid var(--djg-line-soft);
+  padding: 10px 12px;
+  margin: 12px 0;
+}
+
+/* Steno tone color on the badge */
+.djg-phase[data-tone="risk-on"]    .djg-phase-badge { color: var(--djg-pos); }
+.djg-phase[data-tone="risk-off"]   .djg-phase-badge { color: var(--djg-neg); }
+.djg-phase[data-tone="selective"]  .djg-phase-badge { color: var(--djg-warn); }
+.djg-phase[data-tone="neutral"]    .djg-phase-badge { color: var(--djg-flat); }
+
+/* SHORT tag inline with the position name */
+.steno-row .col-name .short-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  background: rgba(248,113,113,0.18);
+  color: var(--djg-neg);
+  border-radius: 2px;
+  vertical-align: 1px;
+}
+
+/* AI tag — Perplexity-proposed ticker; signals "not in the PDF, inferred" */
+.steno-row .col-name .ai-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  background: rgba(96,165,250,0.16);
+  color: #60a5fa;
+  border-radius: 2px;
+  vertical-align: 1px;
+}
+
+/* Bucket row members sub-line — small muted summary of constituent tickers */
+.steno-row .col-name .sub.members {
+  color: var(--djg-muted-2, #6b7280);
+  font-size: 10.5px;
+  font-family: var(--djg-mono);
+  margin-top: 2px;
+  letter-spacing: 0.02em;
+}
+
+/* Off-thesis section header — separates Steno-bucket rows from removable holdings */
+.steno-offthesis-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px 6px;
+  margin-top: 8px;
+  border-top: 1px dashed var(--djg-border, rgba(255,255,255,0.08));
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--djg-warn);
+}
+.steno-offthesis-header .sub {
+  font-size: 10.5px;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-weight: 400;
+  color: var(--djg-muted-2, #6b7280);
+}
+
+/* Drawer member list — drill-down view of bucket constituents */
+.drawer-members {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0 8px;
+}
+.drawer-member {
+  padding: 8px 10px;
+  border: 1px solid var(--djg-border, rgba(255,255,255,0.08));
+  border-radius: 3px;
+  background: rgba(255,255,255,0.02);
+}
+.drawer-member-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--djg-mono);
+}
+.drawer-member-head strong { font-size: 13px; }
+.drawer-member-head .weight {
+  margin-left: auto;
+  color: var(--djg-muted-2, #6b7280);
+  font-size: 12px;
+}
+.member-src {
+  display: inline-block;
+  padding: 1px 4px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  border-radius: 2px;
+}
+.member-src.eq { background: rgba(34,197,94,0.18); color: var(--djg-pos, #4ade80); }
+.member-src.ai { background: rgba(96,165,250,0.18); color: #60a5fa; }
+.member-src.ov { background: rgba(251,191,36,0.18); color: var(--djg-warn, #fbbf24); }
+.drawer-member-rationale {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--djg-muted-2, #6b7280);
+}
+.drawer-member-actions {
+  margin-top: 6px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.drawer-member-actions select {
+  flex: 1;
+  background: rgba(0,0,0,0.4);
+  color: var(--djg-text, #fff);
+  border: 1px solid var(--djg-border, rgba(255,255,255,0.1));
+  border-radius: 2px;
+  padding: 4px 6px;
+  font-size: 11px;
+  font-family: var(--djg-mono);
+}
+.djg-pill-tiny {
+  padding: 4px 10px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+.drawer-empty {
+  padding: 8px 10px;
+  font-size: 11px;
+  color: var(--djg-muted-2, #6b7280);
+  font-style: italic;
+}
+
+/* Bucket-level warnings (direction mismatch, low-confidence members) */
+.drawer-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-left: 2px solid var(--djg-warn, #fbbf24);
+  background: rgba(251,191,36,0.06);
+  border-radius: 0 3px 3px 0;
+}
+.drawer-warnings .warn-row {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--djg-warn, #fbbf24);
+}
+/* Inline warn-tag on the bucket row name */
+.steno-row .col-name .warn-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  background: rgba(251,191,36,0.18);
+  color: var(--djg-warn, #fbbf24);
+  border-radius: 2px;
+  vertical-align: 1px;
+  cursor: help;
+}
+/* Per-member confidence + direction-warn chips inside the drawer */
+.member-conf {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  border-radius: 2px;
+  font-family: var(--djg-mono);
+}
+.member-conf.high { background: rgba(34,197,94,0.18); color: var(--djg-pos, #4ade80); }
+.member-conf.mid  { background: rgba(251,191,36,0.18); color: var(--djg-warn, #fbbf24); }
+.member-conf.low  { background: rgba(248,113,113,0.18); color: var(--djg-neg, #f87171); }
+.member-warn {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  background: rgba(251,191,36,0.18);
+  color: var(--djg-warn, #fbbf24);
+  border-radius: 2px;
+  cursor: help;
+}
+
+/* Alignment headline: never use the red `negative` tone. Override the inherited
+   .djg-signal[data-tone="negative"] color from djg.css. */
+body[data-page="steno"] .djg-signal[data-tone="negative"] .djg-signal-badge { color: var(--djg-warn); }
+
+/* Slightly dim the panel-num so the section title dominates */
+body[data-page="steno"] .djg-panel-num { opacity: 0.65; }
