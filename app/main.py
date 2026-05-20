@@ -73,7 +73,15 @@ def start_scheduler() -> None:
     # New Real Vision reports typically land overnight London time, so a morning pull catches them.
     # The same pipeline can be triggered ad-hoc via POST /api/steno/refresh from the dashboard.
     _schedule_steno_daily(scheduler)
+    # IBKR snapshot — refresh once a day at 06:00 London so the mirror has a fresh
+    # position view when Steno's 07:00 pull lands. Override via IBKR_REFRESH_TIME=HH:MM.
+    _schedule_ibkr_daily(scheduler)
     scheduler.start()
+
+    # First-run bootstrap — if the local Steno cache is empty (or under-covered)
+    # AND the next scheduled pull is more than an hour away, kick off the pipeline
+    # right now so a fresh deploy doesn't show an empty mirror until tomorrow.
+    _maybe_bootstrap_steno()
 
 
 def _schedule_steno_daily(sched) -> None:
@@ -86,6 +94,60 @@ def _schedule_steno_daily(sched) -> None:
     except Exception:
         h, m = 7, 0
     sched.add_job(_pipeline.run_pipeline, "cron", hour=h, minute=m, id="steno_daily", replace_existing=True)
+
+
+def _maybe_bootstrap_steno() -> None:
+    """First-run bootstrap. If the Steno cache is under-covered (we have fewer
+    than the expected min reports for the last 12 weeks) AND the daily cron is
+    not about to fire imminently, kick off a one-shot async refresh on startup
+    so a fresh deploy (or one that's been offline) doesn't sit with stale data
+    until tomorrow morning."""
+    import logging as _logging
+    log = _logging.getLogger("steno.bootstrap")
+    try:
+        from app.services.steno import pipeline as _pipeline
+        cov = _pipeline._coverage_summary()
+        if len(cov["have_in_window"]) >= cov["expected_min"]:
+            log.info("Steno coverage OK on startup (%d/%d weeks); skipping bootstrap",
+                     len(cov["have_in_window"]), cov["target_weeks"])
+            return
+        # Also bail if a refresh is already running (e.g. process restarted mid-run)
+        state = _pipeline.load_refresh_state()
+        if state.get("status") == "running":
+            log.info("Refresh already running on startup, skipping bootstrap")
+            return
+        log.info("Steno cache under-covered (%d/%d weeks); kicking off bootstrap refresh",
+                 len(cov["have_in_window"]), cov["expected_min"])
+        _pipeline.run_pipeline_async(download_new=True, force_reingest=False)
+    except Exception as exc:
+        log.warning("Bootstrap refresh failed to start: %s", exc)
+
+
+def _schedule_ibkr_daily(sched) -> None:
+    """Pull a fresh IBKR Flex snapshot once a day. Failures are logged but don't
+    crash the scheduler — Flex has occasional 503s and the last cached snapshot
+    stays usable."""
+    import os
+    import logging as _logging
+    from app.services.ibkr import flex as _flex
+    from app.services.ibkr import store as _ibkr_store
+    raw = os.getenv("IBKR_REFRESH_TIME", "06:00").strip()
+    try:
+        h_str, m_str = raw.split(":")
+        h, m = int(h_str), int(m_str)
+    except Exception:
+        h, m = 6, 0
+
+    def _job():
+        log = _logging.getLogger("ibkr.scheduler")
+        try:
+            snap = _flex.fetch_snapshot()
+            _ibkr_store.save_snapshot(snap.to_dict())
+            log.info("Daily IBKR snapshot saved (%d positions)", len(snap.positions))
+        except Exception as exc:
+            log.warning("Daily IBKR snapshot failed (last cached snapshot remains): %s", exc)
+
+    sched.add_job(_job, "cron", hour=h, minute=m, id="ibkr_daily", replace_existing=True)
 
 
 def hour_or_six(card_time: str) -> int:
@@ -139,7 +201,21 @@ def steno_portfolio() -> dict:
     latest = _store.get_latest()
     if not latest:
         return {"available": False, "reason": "No Steno portfolio ingested yet."}
-    return {"available": True, "portfolio": latest, "history_count": len(_store.get_history())}
+    return {
+        "available": True,
+        "portfolio": latest,
+        "history_count": len(_store.get_history()),
+        "updates": _store.recent_updates(limit=5),
+    }
+
+
+@app.get("/api/steno/updates")
+def steno_updates(limit: int = 5) -> dict:
+    """Recent Steno reports that came after the current model portfolio —
+    commentary / tactical pieces that don't replace the model but reflect
+    Steno's current thinking."""
+    from app.services.steno import store as _store
+    return {"updates": _store.recent_updates(limit=limit), "current_model_date": (_store.get_latest() or {}).get("report_date")}
 
 
 @app.post("/api/steno/refresh")
@@ -154,6 +230,31 @@ def steno_refresh(download_new: bool = True, force_reingest: bool = False) -> di
 def steno_refresh_status() -> dict:
     from app.services.steno import pipeline as _pipeline
     return _pipeline.load_refresh_state()
+
+
+@app.post("/api/steno/feed-preview")
+def steno_feed_preview() -> dict:
+    """Dry-run scrape: walk Real Vision's feed and return every Steno report
+    URL visible (with parsed dates) WITHOUT downloading PDFs or hitting Claude.
+    Lets you confirm how far back the feed actually exposes reports before
+    committing to a full ingest run."""
+    from app.services.steno import auth as _auth
+    from app.services.steno import downloader as _dl
+    try:
+        state_path = _auth.ensure_authenticated(headless=True)
+        urls = _dl.list_steno_signals_in_feed(state_path)
+    except _dl.SessionExpiredError:
+        state_path = _auth.ensure_authenticated(force=True, headless=True)
+        urls = _dl.list_steno_signals_in_feed(state_path)
+    dated = [u for u in urls if u.get("date")]
+    dated.sort(key=lambda u: u["date"], reverse=True)
+    return {
+        "count": len(urls),
+        "with_date": len(dated),
+        "urls": dated[:40],
+        "oldest": dated[-1]["date"] if dated else None,
+        "newest": dated[0]["date"] if dated else None,
+    }
 
 
 @app.post("/api/steno/resolve-tickers")

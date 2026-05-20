@@ -70,9 +70,13 @@ def _coverage_summary(target_weeks: int = HISTORY_WEEKS_TARGET) -> dict[str, Any
         d = _pdf_date(pdf)
         if d and d >= cutoff:
             dates_in_window.append(d.date().isoformat())
+    # Steno Signals actually publishes ~every 10 days, not weekly. Target ~70%
+    # of a perfect-weekly cadence — that's roughly 1 report every 1.5 weeks,
+    # which matches what we observe on the Real Vision feed.
+    expected_min = max(1, int(target_weeks * 0.5))
     return {
         "target_weeks": target_weeks,
-        "expected_min": max(1, target_weeks - 2),  # tolerate a couple of missing weeks (no report, holidays)
+        "expected_min": expected_min,
         "have_in_window": sorted(set(dates_in_window)),
         "total_on_disk": len(pdfs),
     }

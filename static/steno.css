@@ -334,6 +334,30 @@
 .member-conf.high { background: rgba(34,197,94,0.18); color: var(--djg-pos, #4ade80); }
 .member-conf.mid  { background: rgba(251,191,36,0.18); color: var(--djg-warn, #fbbf24); }
 .member-conf.low  { background: rgba(248,113,113,0.18); color: var(--djg-neg, #f87171); }
+/* Updates-since-model feed */
+.steno-updates { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.steno-updates-empty { font-size: 11px; color: var(--djg-muted-2, #6b7280); font-style: italic; padding: 6px 0; }
+.steno-update {
+  padding: 8px 10px;
+  border-left: 2px solid var(--djg-flat, #94a3b8);
+  background: rgba(255,255,255,0.02);
+  border-radius: 0 3px 3px 0;
+}
+.steno-update[data-tone="risk-on"]    { border-left-color: var(--djg-pos, #4ade80); }
+.steno-update[data-tone="risk-off"]   { border-left-color: var(--djg-neg, #f87171); }
+.steno-update[data-tone="selective"]  { border-left-color: var(--djg-warn, #fbbf24); }
+.steno-update-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--djg-mono);
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+.steno-update-head .tone { font-weight: 700; letter-spacing: 0.1em; font-size: 10px; }
+.steno-update-head .sub { color: var(--djg-muted-2, #6b7280); margin-left: auto; }
+.steno-update-summary { margin: 0; font-size: 11.5px; line-height: 1.45; color: var(--djg-muted, #cbd5e1); }
+
 .member-warn {
   display: inline-block;
   margin-left: 6px;

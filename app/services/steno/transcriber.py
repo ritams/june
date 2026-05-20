@@ -53,7 +53,9 @@ def _transcribe_batch(image_paths: list[Path]) -> str:
         "anthropic-version": ANTHROPIC_VERSION,
         "content-type": "application/json",
     }
-    with httpx.Client(timeout=300.0) as client:
+    # 600s read timeout — Anthropic Vision on 5 high-DPI pages can occasionally push past
+    # 5min when the token-stream stalls; previous 300s caused intermittent batch failures.
+    with httpx.Client(timeout=httpx.Timeout(connect=10.0, read=600.0, write=60.0, pool=10.0)) as client:
         resp = client.post(ANTHROPIC_API_URL, headers=headers, json=payload)
         if resp.status_code >= 400:
             raise RuntimeError(f"Claude API {resp.status_code}: {resp.text[:500]}")

@@ -105,6 +105,42 @@ def _filename_from_url_and_title(url: str, title: str) -> str:
     return f"{_slugify(title)}.pdf"
 
 
+def list_steno_signals_in_feed(auth_state_path: Path) -> list[dict[str, str]]:
+    """Dry-run: walk the Real Vision feed and return every Steno report URL
+    visible, WITHOUT downloading any PDFs. Cheap (~30-60s) and free — useful
+    for confirming how far back the feed exposes reports before committing
+    to a full scrape + Claude processing run.
+    """
+    from playwright.sync_api import sync_playwright  # noqa: WPS433
+
+    found: list[dict[str, str]] = []
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(storage_state=str(auth_state_path))
+        page = context.new_page()
+        try:
+            for report_url in _collect_steno_report_urls(page):
+                slug = report_url.rstrip("/").split("/")[-1]
+                # Try to extract a date from the slug (e.g. "steno-signals-march-4-2026")
+                date_iso = None
+                m = re.search(r"([A-Za-z]+)-(\d{1,2})-(\d{4})", slug)
+                if m:
+                    for fmt in ("%B %d %Y", "%b %d %Y"):
+                        try:
+                            from datetime import datetime
+                            date_iso = datetime.strptime(f"{m.group(1)} {m.group(2)} {m.group(3)}", fmt).date().isoformat()
+                            break
+                        except Exception:
+                            continue
+                m2 = re.search(r"(\d{4}-\d{2}-\d{2})", slug)
+                if m2 and not date_iso:
+                    date_iso = m2.group(1)
+                found.append({"url": report_url, "slug": slug, "date": date_iso or ""})
+        finally:
+            browser.close()
+    return found
+
+
 def download_steno_signals(auth_state_path: Path, *, redownload_all: bool = False) -> list[Path]:
     """Download new Steno Signals PDFs. Returns paths to newly-downloaded files."""
     from playwright.sync_api import sync_playwright  # noqa: WPS433

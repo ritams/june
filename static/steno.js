@@ -58,6 +58,7 @@
     renderActionBreakdown();
     renderSignals();
     renderMacroNotes();
+    renderUpdates();
     renderFooter();
   }
 
@@ -211,6 +212,44 @@
     row.addEventListener("click", () => openOffThesisDrawer(o));
     row.addEventListener("keydown", (e) => { if (e.key === "Enter") openOffThesisDrawer(o); });
     return row;
+  }
+
+  function renderUpdates() {
+    const list = $("[data-updates-list]");
+    const aside = $("[data-updates-aside]");
+    if (!list) return;
+    list.innerHTML = "";
+    const updates = state.portfolio?.updates || [];
+    const modelDate = state.portfolio?.portfolio?.report_date || "—";
+    if (aside) aside.textContent = updates.length
+      ? `${updates.length} since ${modelDate}`
+      : `none since ${modelDate}`;
+    if (!updates.length) {
+      const li = document.createElement("li");
+      li.className = "steno-updates-empty";
+      li.textContent = "No commentary or tactical updates since the current model portfolio.";
+      list.appendChild(li);
+      return;
+    }
+    updates.forEach((u) => {
+      const li = document.createElement("li");
+      li.className = "steno-update";
+      const tone = (u.risk_tone || "").toLowerCase();
+      li.dataset.tone = tone;
+      const posCount = (u.positions || []).length;
+      const posHint = posCount
+        ? `<span class="sub">${posCount} tactical position${posCount === 1 ? "" : "s"}</span>`
+        : `<span class="sub">commentary only</span>`;
+      li.innerHTML = `
+        <div class="steno-update-head">
+          <strong>${u.report_date || "—"}</strong>
+          <span class="tone">${(u.risk_tone || "—").toUpperCase()}</span>
+          ${posHint}
+        </div>
+        <p class="steno-update-summary">${escapeHtml((u.summary || "").slice(0, 280))}</p>
+      `;
+      list.appendChild(li);
+    });
   }
 
   function renderMacroNotes() {
