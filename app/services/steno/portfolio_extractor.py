@@ -1,9 +1,14 @@
 """Steno portfolio extractor — runs Claude with a strict tool_use schema to
-pull a structured model portfolio out of the transcribed PDF text.
+pull structured portfolio signal out of transcribed Steno-Research PDFs.
 
-Unlike the macro-summary analyzer in steno-bot, this is laser-focused on the
-*portfolio table* that we need to mirror against IBKR: ticker, target weight,
-direction, asset class, change-vs-prior, and per-position commentary.
+Doc-type-aware prompting:
+  • Steno Signals (macro only): extract risk_tone + summary + macro_notes, but
+    DO NOT extract positions — these reports have no portfolio table and any
+    "positions" Claude returns are hallucinations from headlines.
+  • Weekly Alpha Digest: extract narrative trims/adds from the Portfolio Update
+    section (commentary-style, may not have explicit weights).
+  • What We Told Hedge Funds: most actionable — explicit ticker mentions with
+    direction + thesis. Treat ticker-level signals as authoritative.
 """
 
 from __future__ import annotations
@@ -21,16 +26,44 @@ from app.services.steno.config import (
     CLAUDE_MODEL,
     STENO_CACHE_DIR,
 )
+from app.services.steno.doc_types import DocType
 
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = (
-    "You are extracting Steno Signals model-portfolio data from a transcribed PDF. "
-    "Your only job is to find the portfolio table (positions, target weights, commentary) "
-    "and translate it into the tool schema verbatim. Do not invent positions. "
-    "If a position name has no ticker, leave ticker null. Round weights to 2 decimals."
-)
+
+def _system_prompt(doc: DocType | None) -> str:
+    if doc is None or doc.key == "steno_signals":
+        return (
+            "You are extracting MACRO context from a 'Steno Signals' report. These reports "
+            "discuss themes and regime calls but DO NOT contain a model portfolio table. "
+            "Return ONLY risk_tone, summary, and macro_notes. The positions array MUST be "
+            "empty — do NOT extract themes as portfolio positions, even if Steno emphasises "
+            "a sector in the title or body. Hallucinated positions break downstream mirroring."
+        )
+    if doc.key == "weekly_alpha_digest":
+        return (
+            "You are extracting portfolio changes from a 'Weekly Alpha Digest' report. This "
+            "report has a 'Portfolio Update' / 'YTD Performance' section in narrative form. "
+            "Extract each ticker or theme Steno discusses with a direction change "
+            "(added / trimmed / closed / new / held) into the positions array. Weights are "
+            "often implicit — set target_weight_pct to the explicit % if Steno gives one, "
+            "otherwise leave it as 0 and capture the action in change_vs_prior + commentary."
+        )
+    if doc.key == "what_we_told_hedge_funds":
+        return (
+            "You are extracting tactical positions from a 'What We Told Hedge Funds This Week' "
+            "report — the most ticker-explicit Steno product. Extract every named ticker with "
+            "its direction (long/short), thesis context, and any stated weight. If no weight "
+            "is stated, leave target_weight_pct as 0 (the position is tactical / unsized). "
+            "These signals are authoritative — DO NOT invent positions but DO capture every "
+            "ticker mentioned with a thesis attached."
+        )
+    return (
+        "You are extracting portfolio data from a Steno-Research PDF. Find any portfolio table "
+        "or per-ticker thesis discussion and translate to the tool schema verbatim. Do not invent "
+        "positions. If a position name has no ticker, leave ticker null. Round weights to 2 decimals."
+    )
 
 PORTFOLIO_TOOL: dict[str, Any] = {
     "name": "extract_steno_portfolio",
@@ -95,11 +128,16 @@ PORTFOLIO_TOOL: dict[str, Any] = {
 }
 
 
-def extract_portfolio(transcript: str, pdf_stem: str | None = None) -> dict[str, Any]:
+def extract_portfolio(
+    transcript: str,
+    pdf_stem: str | None = None,
+    doc_type: DocType | None = None,
+) -> dict[str, Any]:
     """Send transcript to Claude with portfolio tool_use, return parsed JSON.
 
     Cached per pdf_stem in runtime/steno/cache/<stem>-portfolio.json to avoid
-    re-billing on dashboard reloads.
+    re-billing on dashboard reloads. The doc_type controls the system prompt
+    so we don't extract phantom positions from non-portfolio reports.
     """
     cache_path = STENO_CACHE_DIR / f"{pdf_stem}-portfolio.json" if pdf_stem else None
     if cache_path and cache_path.exists():
@@ -112,7 +150,7 @@ def extract_portfolio(transcript: str, pdf_stem: str | None = None) -> dict[str,
     payload = {
         "model": CLAUDE_MODEL,
         "max_tokens": 4096,
-        "system": SYSTEM_PROMPT,
+        "system": _system_prompt(doc_type),
         "tools": [PORTFOLIO_TOOL],
         "tool_choice": {"type": "tool", "name": "extract_steno_portfolio"},
         "messages": [{"role": "user", "content": f"Transcript:\n\n{transcript[:120000]}"}],
@@ -135,6 +173,16 @@ def extract_portfolio(transcript: str, pdf_stem: str | None = None) -> dict[str,
             break
     if portfolio is None:
         raise RuntimeError("Claude did not return a tool_use block — extraction failed")
+
+    # Stamp the doc type so downstream consumers can weight + label correctly.
+    if doc_type is not None:
+        portfolio["doc_type"] = doc_type.key
+        portfolio["doc_label"] = doc_type.label
+    # Defence-in-depth: a Steno Signals extraction should NEVER have positions.
+    if doc_type and doc_type.key == "steno_signals" and portfolio.get("positions"):
+        logger.info("Discarding %d hallucinated positions from steno_signals report %s",
+                    len(portfolio["positions"]), pdf_stem)
+        portfolio["positions"] = []
 
     if cache_path:
         cache_path.write_text(json.dumps(portfolio, indent=2))

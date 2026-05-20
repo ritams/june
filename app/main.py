@@ -214,12 +214,12 @@ def steno_portfolio() -> dict:
 
 
 @app.get("/api/steno/universe")
-def steno_universe(lookback: int = 6) -> dict:
-    """The rolling theme universe — union of themes across the most-recent N
-    reports, with most-recent-valid-weight per theme. This is what the mirror
-    actually compares Dan's IBKR portfolio against."""
+def steno_universe(lookback_weeks: int = 8) -> dict:
+    """The rolling theme universe — union of themes across all Steno-Research
+    docs (Steno Signals macro / Weekly Alpha Digest / What We Told Hedge Funds)
+    in the last `lookback_weeks` weeks, with most-recent-valid-weight per theme."""
     from app.services.steno import store as _store
-    return _store.build_theme_universe(lookback_reports=lookback)
+    return _store.build_theme_universe(lookback_weeks=lookback_weeks)
 
 
 @app.get("/api/steno/updates")

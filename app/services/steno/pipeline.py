@@ -16,6 +16,7 @@ from typing import Any
 
 from app.services.steno import auth, downloader, portfolio_extractor, renderer, store, ticker_resolver, transcriber
 from app.services.steno.config import STENO_DOWNLOADS_DIR, STENO_PROCESSED_PATH, STENO_ROOT
+from app.services.steno.doc_types import INGEST_PREFIXES, classify_filename
 
 
 logger = logging.getLogger(__name__)
@@ -64,7 +65,8 @@ def _pdf_date(pdf: Path) -> datetime | None:
 def _coverage_summary(target_weeks: int = HISTORY_WEEKS_TARGET) -> dict[str, Any]:
     """Inspect downloaded PDFs and report coverage vs target_weeks history window."""
     cutoff = datetime.now(timezone.utc) - timedelta(weeks=target_weeks)
-    pdfs = sorted(STENO_DOWNLOADS_DIR.glob("steno-signals-*.pdf"))
+    all_pdfs = list(STENO_DOWNLOADS_DIR.glob("*.pdf"))
+    pdfs = [p for p in all_pdfs if classify_filename(p.name) is not None]
     dates_in_window: list[str] = []
     for pdf in pdfs:
         d = _pdf_date(pdf)
@@ -99,6 +101,10 @@ def _save_processed(items: set[str]) -> None:
 def ingest_pdf(pdf_path: Path, *, force: bool = False) -> dict[str, Any]:
     """Render → transcribe → extract → commit a single PDF. Returns the committed record."""
     stem = pdf_path.stem
+    doc_type = classify_filename(pdf_path.name)
+    if doc_type is None:
+        logger.info("Skipping unsupported doc type: %s", pdf_path.name)
+        return {}
     processed = _load_processed()
     if not force and stem in processed:
         latest = store.get_latest()
@@ -107,10 +113,13 @@ def ingest_pdf(pdf_path: Path, *, force: bool = False) -> dict[str, Any]:
 
     images, _ = renderer.render_pdf_pages(pdf_path)
     transcript = transcriber.transcribe_pages(images, pdf_stem=stem)
-    portfolio = portfolio_extractor.extract_portfolio(transcript, pdf_stem=stem)
-    # Fill in ambiguous theme tickers via Perplexity before committing.
-    ticker_resolver.enrich_portfolio_tickers(portfolio)
-    record = store.commit_portfolio(portfolio, source_pdf=pdf_path.name)
+    portfolio = portfolio_extractor.extract_portfolio(transcript, pdf_stem=stem, doc_type=doc_type)
+    # Only do ticker resolution for docs that contribute themes — there's no
+    # point resolving "Drone Defence ETF" → JEDI on a Steno Signals report
+    # that has no positions.
+    if doc_type.contributes_themes:
+        ticker_resolver.enrich_portfolio_tickers(portfolio)
+    record = store.commit_portfolio(portfolio, source_pdf=pdf_path.name, doc_type=doc_type.key)
 
     processed.add(stem)
     _save_processed(processed)
@@ -203,10 +212,14 @@ def run_pipeline(
             "Real Vision feed may not expose older reports."
         )
 
-    # Ingest every PDF on disk (chronological), filtered by processed.json.
-    pdfs = sorted(STENO_DOWNLOADS_DIR.glob("steno-signals-*.pdf"), key=lambda p: _pdf_date(p) or datetime.min.replace(tzinfo=timezone.utc))
-    if not pdfs:
-        pdfs = sorted(STENO_DOWNLOADS_DIR.glob("*.pdf"))
+    # Ingest every PDF whose slug matches one of our wanted doc types
+    # (Steno Signals, Weekly Alpha Digest, What We Told Hedge Funds).
+    # Sorted chronologically so the latest report wins on conflicts.
+    all_pdfs = list(STENO_DOWNLOADS_DIR.glob("*.pdf"))
+    pdfs = sorted(
+        [p for p in all_pdfs if classify_filename(p.name) is not None],
+        key=lambda p: _pdf_date(p) or datetime.min.replace(tzinfo=timezone.utc),
+    )
     summary["ingest_total"] = len(pdfs)
     progress("ingesting", ingest_total=len(pdfs))
 

@@ -77,41 +77,45 @@ def ensure_model_flags(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-DEFAULT_UNIVERSE_LOOKBACK = 6  # most-recent N Steno reports — ~10-week window at Steno's cadence
+DEFAULT_UNIVERSE_LOOKBACK_WEEKS = 8  # ~8 weeks covers ~6-12 reports across all doc types
 
 
-def build_theme_universe(lookback_reports: int = DEFAULT_UNIVERSE_LOOKBACK) -> dict[str, Any]:
-    """Assemble Steno's "implied portfolio" across the most-recent N reports.
+def build_theme_universe(lookback_weeks: int = DEFAULT_UNIVERSE_LOOKBACK_WEEKS) -> dict[str, Any]:
+    """Assemble Steno's "implied portfolio" across all Steno-Research reports
+    in the last `lookback_weeks` weeks.
 
-    Steno doesn't restate his complete book in every report — each PDF mentions
-    a subset of his positions. Walking the recent history gives us the union
-    of every theme he's said something about, with the most-recent valid
-    weight per theme.
+    Walks every doc type — Steno Signals (no positions, ignored here), Weekly
+    Alpha Digest, What We Told Hedge Funds — and unions themes by name. For
+    each theme, the most-recent non-zero weight wins; doc_type and source
+    metadata are carried through so the UI can show "from WWTHF Mar 6".
 
     Quality filters:
-      (a) Skip zero-weight entries — Steno's pair-trade format ("USD/JPY Long")
-          can extract at weight=0, which would pollute the universe with
-          nominal themes. If we can't see a weight we don't pretend to know it.
-      (c) Skip implausible single-position weights (≥90%) — these are
-          extraction artifacts from commentary-only reports (e.g. May 18
-          extracting "100% Energy Stocks" from a headline).
+      (a) Skip zero-weight entries — without a weight we can't compute a gap.
+      (b) Skip implausible single-position weights (≥90%) — extraction
+          artifacts from commentary-only reports.
 
     Returns:
         {
-          "themes": [...],           # one per unique theme, sorted by recency
-          "reports_used": [...],     # dates of reports in the lookback window
-          "lookback_count": int,
-          "core_model_date": str,    # which report counts as "core" model
+          "themes": [...],         # one per unique theme, sorted by recency
+          "reports_used": [...],   # {date, doc_type, source_pdf} for each
+          "lookback_weeks": int,
+          "core_model_date": str,
+          "doc_type_breakdown": {what_we_told_hedge_funds: 3, weekly_alpha_digest: 2, ...}
         }
     """
+    from datetime import datetime, timedelta, timezone
+
     data = ensure_model_flags(load_store())
     history = data.get("history") or []
-    sorted_h = sorted(history, key=lambda h: h.get("report_date") or "", reverse=True)
-    recent = sorted_h[:lookback_reports]
+    cutoff = (datetime.now(timezone.utc) - timedelta(weeks=lookback_weeks)).date().isoformat()
+    in_window = sorted(
+        [h for h in history if (h.get("report_date") or "") >= cutoff],
+        key=lambda h: h.get("report_date") or "",
+        reverse=True,
+    )
 
-    # Find the most-recent full-model report — themes from there are flagged
-    # is_core=True; everything else is tactical.
-    core_report = next((h for h in sorted_h if h.get("is_model_portfolio")), None)
+    # "Core" = the most-recent full model portfolio in window (any doc type).
+    core_report = next((h for h in in_window if h.get("is_model_portfolio")), None)
     core_names: set[str] = set()
     if core_report:
         core_names = {
@@ -120,20 +124,20 @@ def build_theme_universe(lookback_reports: int = DEFAULT_UNIVERSE_LOOKBACK) -> d
         }
 
     themes: dict[str, dict[str, Any]] = {}
-    for h in recent:
+    for h in in_window:
         report_date = h.get("report_date") or ""
+        doc_type = h.get("doc_type") or "unknown"
         for pos in (h.get("positions") or []):
             weight = pos.get("target_weight_pct") or 0
             if abs(weight) < 0.01:        # filter (a)
                 continue
-            if abs(weight) >= 90:         # filter (c)
+            if abs(weight) >= 90:         # filter (b)
                 continue
             name = (pos.get("name") or "").strip()
             if not name:
                 continue
             key = name.lower()
             if key not in themes:
-                # First (newest) encounter — this report's weight/direction/ticker wins.
                 themes[key] = {
                     "name": name,
                     "ticker": pos.get("ticker"),
@@ -145,6 +149,8 @@ def build_theme_universe(lookback_reports: int = DEFAULT_UNIVERSE_LOOKBACK) -> d
                     "commentary": pos.get("commentary", ""),
                     "change_vs_prior": pos.get("change_vs_prior"),
                     "source_report_date": report_date,
+                    "source_doc_type": doc_type,
+                    "source_pdf": h.get("source_pdf"),
                     "first_seen": report_date,
                     "last_seen": report_date,
                     "appearances": 1,
@@ -152,51 +158,60 @@ def build_theme_universe(lookback_reports: int = DEFAULT_UNIVERSE_LOOKBACK) -> d
                     "is_tactical": key not in core_names,
                 }
             else:
-                # Older occurrence — extend appearance counter + roll back first_seen.
                 t = themes[key]
                 t["appearances"] += 1
                 if report_date and report_date < (t["first_seen"] or report_date):
                     t["first_seen"] = report_date
 
-    # Sort: core themes first (with highest weight), then tactical by recency.
     ordered = sorted(
         themes.values(),
         key=lambda t: (
-            not t["is_core"],                   # core first
-            -float(t["target_weight_pct"]),     # then by weight desc
-            -t["appearances"],                  # then by recurrence
+            not t["is_core"],
+            -float(t["target_weight_pct"]),
+            -t["appearances"],
         ),
     )
 
+    breakdown: dict[str, int] = {}
+    for h in in_window:
+        dt = h.get("doc_type") or "unknown"
+        breakdown[dt] = breakdown.get(dt, 0) + 1
+
     return {
         "themes": ordered,
-        "reports_used": [h.get("report_date") for h in recent if h.get("report_date")],
-        "lookback_count": len(recent),
+        "reports_used": [
+            {"date": h.get("report_date"), "doc_type": h.get("doc_type"), "source_pdf": h.get("source_pdf")}
+            for h in in_window if h.get("report_date")
+        ],
+        "lookback_weeks": lookback_weeks,
+        "report_count": len(in_window),
+        "doc_type_breakdown": breakdown,
         "core_model_date": (core_report or {}).get("report_date"),
         "core_model_source_pdf": (core_report or {}).get("source_pdf"),
     }
 
 
-def universe_as_portfolio(lookback_reports: int = DEFAULT_UNIVERSE_LOOKBACK) -> dict[str, Any] | None:
+def universe_as_portfolio(lookback_weeks: int = DEFAULT_UNIVERSE_LOOKBACK_WEEKS) -> dict[str, Any] | None:
     """Wrap the theme universe in a portfolio-shaped dict that the mirror engine
     can consume directly. Returns None if no usable themes exist.
     """
-    universe = build_theme_universe(lookback_reports=lookback_reports)
+    universe = build_theme_universe(lookback_weeks=lookback_weeks)
     themes = universe["themes"]
     if not themes:
         return None
-    # Carry forward metadata from the most-recent full model so the UI keeps
-    # showing tone / cash / macro_notes / etc.
     base = (load_store() or {}).get("latest") or {}
     return {
-        "report_date": base.get("report_date"),  # date of the core model
-        "report_title": f"Rolling theme universe ({universe['lookback_count']} reports)",
+        "report_date": base.get("report_date"),
+        "report_title": f"Rolling theme universe ({universe['report_count']} reports, {lookback_weeks}w)",
         "risk_tone": base.get("risk_tone"),
         "summary": base.get("summary"),
         "positions": themes,
         "cash_weight_pct": base.get("cash_weight_pct"),
         "macro_notes": base.get("macro_notes"),
         "_universe_meta": {
+            "lookback_weeks": lookback_weeks,
+            "report_count": universe["report_count"],
+            "doc_type_breakdown": universe["doc_type_breakdown"],
             "reports_used": universe["reports_used"],
             "core_model_date": universe["core_model_date"],
         },
@@ -243,7 +258,7 @@ def recent_updates(limit: int = 5) -> list[dict[str, Any]]:
     return updates
 
 
-def commit_portfolio(extracted: dict[str, Any], *, source_pdf: str | None = None) -> dict[str, Any]:
+def commit_portfolio(extracted: dict[str, Any], *, source_pdf: str | None = None, doc_type: str | None = None) -> dict[str, Any]:
     """Add a newly-extracted portfolio to history. Promotes to `latest` only if
     it looks like a real model-portfolio rebalance — commentary-only Steno
     Signals (no portfolio table) stay in history but don't replace the active
@@ -256,6 +271,7 @@ def commit_portfolio(extracted: dict[str, Any], *, source_pdf: str | None = None
         **extracted,
         "ingested_at": datetime.now(timezone.utc).isoformat(),
         "source_pdf": source_pdf,
+        "doc_type": doc_type or extracted.get("doc_type"),
         "is_model_portfolio": is_model,
         "is_commentary_only": not is_model,
         "commentary_reason": None if is_model else reason,

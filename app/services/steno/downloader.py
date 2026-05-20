@@ -1,7 +1,9 @@
 """Real Vision PDF downloader — scrolls the report feed, intercepts PDF
 network requests, then pulls the file via the authenticated context.
 
-Same pattern as the sibling steno-bot. Filters to "Steno Signals" title.
+Pulls every Steno-Research document type we care about (Steno Signals,
+Weekly Alpha Digest, What We Told Hedge Funds) and skips the rest
+(the-drill, rv-pro, macro-meets-micro). See doc_types.py for the policy.
 """
 
 from __future__ import annotations
@@ -13,6 +15,11 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from app.services.steno.config import STENO_DOWNLOADS_DIR
+from app.services.steno.doc_types import (
+    INGEST_PREFIXES,
+    SKIP_PREFIXES,
+    classify_slug,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -33,6 +40,15 @@ def _slugify(text: str) -> str:
     return text
 
 
+def _slug_is_wanted(slug: str) -> bool:
+    """A URL slug is wanted iff it matches one of the INGEST_PREFIXES AND
+    doesn't start with one of the SKIP_PREFIXES (defence-in-depth)."""
+    s = (slug or "").lower()
+    if any(s.startswith(p) for p in SKIP_PREFIXES):
+        return False
+    return any(s.startswith(p) for p in INGEST_PREFIXES)
+
+
 def _collect_steno_report_urls(page) -> list[str]:
     page.goto(REPORTS_URL)
     page.wait_for_load_state("networkidle")
@@ -48,10 +64,7 @@ def _collect_steno_report_urls(page) -> list[str]:
         for card in cards:
             try:
                 href = card.get_attribute("href") or ""
-                text = card.inner_text()
             except Exception:
-                continue
-            if "steno" not in text.lower() and "steno" not in href.lower():
                 continue
             if href.startswith("http"):
                 full = href
@@ -60,6 +73,13 @@ def _collect_steno_report_urls(page) -> list[str]:
             else:
                 continue
             if "realvision.com" not in full:
+                continue
+            # Match by URL slug — robust against card-text variations across
+            # Real Vision's feed layout. We accept anything in INGEST_PREFIXES
+            # (Steno Signals, Weekly Alpha Digest, What We Told Hedge Funds)
+            # and reject SKIP_PREFIXES (the-drill, rv-pro, macro-meets-micro).
+            slug = full.rstrip("/").split("/")[-1]
+            if not _slug_is_wanted(slug):
                 continue
             if full not in seen:
                 seen.add(full)
@@ -70,7 +90,13 @@ def _collect_steno_report_urls(page) -> list[str]:
         page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
         page.wait_for_timeout(2000)
 
-    logger.info("Steno feed scan found %d report(s)", len(urls))
+    by_type: dict[str, int] = {}
+    for u in urls:
+        slug = u.rstrip("/").split("/")[-1]
+        dt = classify_slug(slug)
+        if dt:
+            by_type[dt.key] = by_type.get(dt.key, 0) + 1
+    logger.info("Feed scan found %d Steno-Research report(s) across types: %s", len(urls), by_type)
     return urls
 
 
@@ -98,10 +124,13 @@ def _capture_pdf_url(page, report_url: str) -> str | None:
 
 
 def _filename_from_url_and_title(url: str, title: str) -> str:
-    parsed = urlparse(url)
-    date_match = re.search(r"(\d{4}-\d{2}-\d{2})", parsed.path)
-    if date_match:
-        return f"steno-signals-{date_match.group(1)}.pdf"
+    """Preserve the URL slug as the filename so doc-type classification works
+    later via filename pattern matching. Earlier this function rewrote
+    everything to `steno-signals-<date>.pdf` regardless of source — which
+    silently destroyed the doc-type signal."""
+    slug = url.rstrip("/").split("/")[-1]
+    if slug:
+        return f"{slug}.pdf"
     return f"{_slugify(title)}.pdf"
 
 
