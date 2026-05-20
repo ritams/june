@@ -73,6 +73,13 @@
     $("[data-steno-summary]").textContent = m.steno_summary || p.summary || "Waiting for Steno data…";
     $("[data-steno-date]").textContent = m.steno_report_date || p.report_date || "—";
     $("[data-steno-count]").textContent = (m.total_buckets || (p.positions?.length || 0));
+    const um = m.universe_meta;
+    const aside = $("[data-universe-meta]");
+    if (aside) {
+      aside.textContent = um && um.reports_used && um.reports_used.length
+        ? `· rolling ${um.reports_used.length}-report universe (core ${um.core_model_date || '—'})`
+        : "";
+    }
     const cash = m.steno_cash_weight_pct;
     $("[data-steno-cash]").innerHTML = cash != null ? `Cash <em>${cash.toFixed(1)}%</em>` : "";
 
@@ -169,6 +176,12 @@
     const warnBadge = (b.warnings && b.warnings.length)
       ? `<span class="warn-tag" title="${escapeAttr(b.warnings.join(' · '))}">⚠ ${b.warnings.length}</span>`
       : "";
+    // Core vs tactical chip — explains where this bucket came from in the rolling universe
+    const themeBadge = b.is_tactical
+      ? `<span class="theme-tag tactical" title="Tactical overlay — added in ${b.source_report_date || 'a recent update'}">TACTICAL</span>`
+      : b.is_core
+        ? `<span class="theme-tag core" title="Core model theme — first seen ${b.first_seen || '—'}, last mentioned ${b.last_seen || '—'}">CORE</span>`
+        : "";
     const stenoDisplay = fmtPct(Math.abs(b.steno_weight_pct));
     const danDisplay = fmtPct(Math.abs(b.dan_weight_pct));
     const gapDisplay = b.action === "Hold" ? "—" : fmtSignedPct(displayGap);
@@ -176,7 +189,7 @@
     row.innerHTML = `
       <span class="col-action">${b.action}</span>
       <span class="col-name">
-        <strong>${b.name}${dirBadge}${aiBadge}${warnBadge}</strong>
+        <strong>${b.name}${dirBadge}${themeBadge}${aiBadge}${warnBadge}</strong>
         <span class="sub">${subTicker}${b.asset_class} · ${memberCount} holding${memberCount === 1 ? "" : "s"}</span>
         <span class="sub members">${memberLine}</span>
       </span>

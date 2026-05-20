@@ -60,8 +60,10 @@ DEFAULT_GROUPS: list[list[str]] = [
     ["HYG", "JNK", "SHYG"],
     # Investment-grade credit
     ["LQD", "VCIT", "IGSB"],
-    # Dollar bull
-    ["UUP", "USDU"],
+    # Dollar bull — UUP is the tradeable ETF, DXY is the index ticker. Steno often
+    # quotes "USD Index" / "DXY" which is the index spec; for mirror purposes we
+    # collapse them with UUP so Dan's long UUP counts as long-DXY exposure.
+    ["UUP", "USDU", "DXY"],
     # EUR (vs USD) — long EUR/short USD pair trade
     ["FXE", "EUR"],
     # JPY

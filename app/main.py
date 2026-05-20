@@ -118,6 +118,10 @@ def _maybe_bootstrap_steno() -> None:
             return
         log.info("Steno cache under-covered (%d/%d weeks); kicking off bootstrap refresh",
                  len(cov["have_in_window"]), cov["expected_min"])
+        # Detached thread — the pipeline itself has per-step timeouts (Playwright
+        # 60s for the feed walk, 600s read timeout per Vision batch). If anything
+        # truly hangs, the parent process can be restarted safely; this thread
+        # is daemonized so it never blocks shutdown.
         _pipeline.run_pipeline_async(download_new=True, force_reingest=False)
     except Exception as exc:
         log.warning("Bootstrap refresh failed to start: %s", exc)
@@ -207,6 +211,15 @@ def steno_portfolio() -> dict:
         "history_count": len(_store.get_history()),
         "updates": _store.recent_updates(limit=5),
     }
+
+
+@app.get("/api/steno/universe")
+def steno_universe(lookback: int = 6) -> dict:
+    """The rolling theme universe — union of themes across the most-recent N
+    reports, with most-recent-valid-weight per theme. This is what the mirror
+    actually compares Dan's IBKR portfolio against."""
+    from app.services.steno import store as _store
+    return _store.build_theme_universe(lookback_reports=lookback)
 
 
 @app.get("/api/steno/updates")

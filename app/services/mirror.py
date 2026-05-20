@@ -91,7 +91,10 @@ def build_mirror(
     tolerance_pct: float = DEFAULT_TOLERANCE_PCT,
 ) -> dict[str, Any]:
     if steno_portfolio is None:
-        steno_portfolio = steno_store.get_latest()
+        # Use the rolling theme universe — last 6 reports' worth of themes,
+        # union'd by name with most-recent-valid-weight winning per theme.
+        # Falls back to the latest committed model if no universe is buildable.
+        steno_portfolio = steno_store.universe_as_portfolio() or steno_store.get_latest()
     if ibkr_snapshot is None:
         from app.services.ibkr import store as ibkr_store_mod
         ibkr_snapshot = ibkr_store_mod.load_snapshot()
@@ -127,6 +130,13 @@ def build_mirror(
             "steno_weight_pct": steno_pct_abs * sign,
             "commentary": pos.get("commentary", ""),
             "change_vs_prior": pos.get("change_vs_prior"),
+            # Universe metadata (when this bucket came from the rolling universe)
+            "is_core": pos.get("is_core"),
+            "is_tactical": pos.get("is_tactical"),
+            "source_report_date": pos.get("source_report_date"),
+            "first_seen": pos.get("first_seen"),
+            "last_seen": pos.get("last_seen"),
+            "appearances": pos.get("appearances"),
             "members": [],
         })
 
@@ -293,7 +303,7 @@ def build_mirror(
         + sum(o["market_value"] for o in off_thesis)
     )
 
-    priority = {"Buy": 0, "Sell": 1, "Add": 2, "Trim": 3, "Missing": 4, "Hold": 6}
+    priority = {"Buy": 0, "Sell": 1, "Add": 2, "Trim": 3, "Missing": 4, "Remove": 5, "Hold": 6}
     all_buckets.sort(key=lambda b: (priority.get(b["action"], 9), -abs(b["gap_pct"])))
     off_thesis.sort(key=lambda o: -abs(o["weight_pct"]))
 
@@ -317,4 +327,5 @@ def build_mirror(
         "total_capital_to_move": round(total_capital, 0),
         "buckets": all_buckets,
         "off_thesis": off_thesis,
+        "universe_meta": steno_portfolio.get("_universe_meta"),
     }

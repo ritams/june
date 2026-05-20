@@ -1,11 +1,12 @@
 ## June Dashboard
 
-June is a small FastAPI app that serves two client-facing dashboards plus an optional combined overview:
+June is a small FastAPI app that serves three client-facing dashboards plus an optional combined overview:
 
-- `Liquidity`
-- `Business Cycle`
+- `Liquidity` — Fed liquidity, repo, credit spreads, dollar
+- `Business Cycle` — ISM, yield curve, employment, cycle phase detector
+- `Steno Mirror` — Steno Signals portfolio ingestion + IBKR alignment engine
 
-The backend pulls live macro data from `FRED`, `yfinance`, and `Perplexity sonar-pro` when configured, with an official `ISM` fallback path if Perplexity is unavailable. It can also:
+The backend pulls live macro data from `FRED`, `yfinance`, and `Perplexity sonar-pro` when configured, with an official `ISM` fallback path if Perplexity is unavailable. The Steno mirror downloads PDFs from Real Vision (Playwright), extracts portfolios via Claude Vision, classifies Dan's IBKR positions into Steno's themes with a Perplexity + Anthropic dual-AI stage, and produces Buy/Add/Hold/Trim/Sell signals. It can also:
 
 - send Telegram alerts
 - send a daily Telegram card
@@ -72,6 +73,7 @@ Minimum required key:
 For this deployment, use a block like this in `.env`:
 
 ```env
+# Core macro feeds
 FRED_API_KEY=your_fred_key
 PERPLEXITY_API_KEY=
 PERPLEXITY_MODEL=sonar-pro
@@ -89,6 +91,24 @@ CACHE_TTL_SECONDS=900
 HOST=127.0.0.1
 PORT=8000
 GLOBAL_M2_PROXY_SERIES_ID=
+
+# Steno Mirror — Real Vision login (used by Playwright headless scraper)
+RV_EMAIL=your_realvision_login
+RV_PASSWORD=your_realvision_password
+
+# Steno Mirror — Anthropic (Claude Vision for PDF → text; Claude Sonnet for thematic classification)
+ANTHROPIC_API_KEY=sk-ant-api03-...
+ANTHROPIC_API_URL=https://api.anthropic.com/v1/messages
+ANTHROPIC_VERSION=2023-06-01
+CLAUDE_MODEL=claude-sonnet-4-6
+
+# Steno Mirror — IBKR Flex Web Service (read-only daily snapshot)
+IBKR_FLEX_TOKEN=your_flex_token
+IBKR_FLEX_QUERY_ID=your_flex_query_id
+
+# Optional schedule overrides (HH:MM in APP_TIMEZONE)
+STENO_PIPELINE_TIME=07:00
+IBKR_REFRESH_TIME=06:00
 ```
 
 Notes:
@@ -110,10 +130,11 @@ uv run python main.py
 
 Open:
 
-- `http://127.0.0.1:8000/` redirects to `http://127.0.0.1:8000/liquidity`
+- `http://127.0.0.1:8000/` redirects to `http://127.0.0.1:8000/dashboard`
 - `http://127.0.0.1:8000/liquidity`
 - `http://127.0.0.1:8000/business-cycle`
 - `http://127.0.0.1:8000/dashboard`
+- `http://127.0.0.1:8000/steno` — Steno mirror
 
 Health check:
 
@@ -135,6 +156,110 @@ Expected shape:
   "backtest_cache_stale": false
 }
 ```
+
+## Steno Mirror — first run on a fresh machine
+
+The Steno mirror needs three one-time pieces of setup, then runs on its own. After cloning the repo and creating `.env` (above), do this:
+
+### 1. Install Playwright's bundled Chromium
+
+The Real Vision scraper drives a headless browser. After `uv sync` you need:
+
+```bash
+uv run playwright install chromium
+```
+
+This is a one-off download (~150 MB). If it fails on macOS due to permissions, run with `--with-deps`.
+
+### 2. Start the app
+
+```bash
+uv run python main.py
+```
+
+On first start with an empty Steno cache, the app **automatically kicks off a background pipeline run** — it scrapes Real Vision for the last ~12 weeks of Steno Signals reports, sends each through Claude Vision, and builds the model portfolio + theme universe. Watch the logs (`steno.bootstrap`, `steno.scheduler`) — expected wall time is **~15 minutes** for ~5 PDFs at first deploy.
+
+While that runs you can already open `/steno` — it'll show the polling status (`Steno refresh · ingesting 3/5 · coverage 4/6 reports`) and the page auto-refreshes when ingestion completes.
+
+### 3. Pull a fresh IBKR snapshot
+
+The first IBKR snapshot is loaded on demand. Trigger it once from the Operations panel on `/steno` (click `Refresh IBKR`) or:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/ibkr/refresh
+```
+
+After that, IBKR refreshes daily at the time set by `IBKR_REFRESH_TIME` (default 06:00 London).
+
+### Scheduled jobs
+
+The app runs these on the configured timezone:
+
+| Job | Default | Override |
+|---|---|---|
+| Steno pipeline (download + ingest new PDFs) | 07:00 | `STENO_PIPELINE_TIME` |
+| IBKR Flex snapshot | 06:00 | `IBKR_REFRESH_TIME` |
+| Macro alert checks | every 15 min | `REFRESH_INTERVAL_MINUTES` |
+| Daily card | configured | `DAILY_CARD_TIME` |
+
+### Useful Steno-specific endpoints
+
+```bash
+# Live mirror state — buckets, off-thesis, action breakdown
+curl http://127.0.0.1:8000/api/mirror
+
+# Rolling theme universe — union of themes across last 6 reports
+curl http://127.0.0.1:8000/api/steno/universe
+
+# Latest model + updates-since-model feed
+curl http://127.0.0.1:8000/api/steno/portfolio
+
+# Dry-run Real Vision feed scan (no PDFs downloaded, no Claude cost)
+curl -X POST http://127.0.0.1:8000/api/steno/feed-preview
+
+# Force a full refresh now (async, watch refresh-status to follow)
+curl -X POST http://127.0.0.1:8000/api/steno/refresh
+curl http://127.0.0.1:8000/api/steno/refresh-status
+
+# Pin a Dan ticker to a specific Steno bucket
+curl -X POST "http://127.0.0.1:8000/api/mirror/override?ticker=NVDA&bucket=U.S.%20CapEx%20%2F%20Domestic%20Cycle%20Equities"
+curl -X POST "http://127.0.0.1:8000/api/mirror/override?ticker=NVDA&clear=true"
+```
+
+### Runtime data layout (gitignored)
+
+All Steno + IBKR state lives under `runtime/` (never committed):
+
+```
+runtime/
+├── steno/
+│   ├── auth/rv_auth.json              # Real Vision MSAL cookies (persists ~2 days)
+│   ├── downloads/*.pdf                # raw Steno PDFs
+│   ├── renders/<stem>/page-*.png      # 200-DPI page images for Vision
+│   ├── cache/<stem>-transcript.txt    # Claude Vision transcript per PDF
+│   ├── cache/<stem>-portfolio.json    # Extracted structured portfolio per PDF
+│   ├── model_portfolio.json           # Committed portfolio store (latest + history)
+│   ├── processed.json                 # Already-ingested PDF stems
+│   ├── refresh_state.json             # Live progress of an in-flight pipeline run
+│   ├── ticker_profiles.json           # Perplexity ticker fact-sheets (cached 14d)
+│   ├── ticker_resolutions.json        # Theme → ticker resolutions
+│   ├── bucket_classifications.json    # Dan ticker → Steno bucket assignments
+│   ├── bucket_overrides.json          # Manual ticker→bucket pins
+│   └── aliases.json                   # User-extended equivalence groups
+├── ibkr/
+│   └── snapshot.json                  # Latest IBKR Flex positions + NAV
+└── monitor_state.json
+```
+
+To wipe everything and start over: `rm -rf runtime/`. The app will rebuild on next start.
+
+### Troubleshooting
+
+- **`/steno` shows "No mirror data yet"** — the bootstrap is still running. Hit `/api/steno/refresh-status` to see progress.
+- **Playwright errors about missing browser** — re-run `uv run playwright install chromium`.
+- **"Session expired" in pipeline logs** — Real Vision MSAL token aged out (>48h). The pipeline auto-retries with a fresh login on the next run; if it persists, delete `runtime/steno/auth/rv_auth.json` and re-run.
+- **Anthropic 400 / credit balance error** — top up the API key holder's account; `runtime/steno/cache/` keeps every previously-extracted transcript so you won't re-pay on retry.
+- **Some Dan tickers stuck off-thesis** — open them in the drawer and pin to a bucket; the override saves to `runtime/steno/bucket_overrides.json` and survives reingest.
 
 ## Historical Playbook
 
