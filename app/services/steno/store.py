@@ -114,63 +114,106 @@ def build_theme_universe(lookback_weeks: int = DEFAULT_UNIVERSE_LOOKBACK_WEEKS) 
         reverse=True,
     )
 
-    # "Core" = the most-recent full model portfolio in window (any doc type).
     core_report = next((h for h in in_window if h.get("is_model_portfolio")), None)
-    core_names: set[str] = set()
-    if core_report:
-        core_names = {
-            (p.get("name") or "").strip().lower()
-            for p in (core_report.get("positions") or [])
-        }
 
-    themes: dict[str, dict[str, Any]] = {}
+    # ── 1. Collect every raw position entry in the window ────────────────────
+    raw: list[dict[str, Any]] = []
     for h in in_window:
         report_date = h.get("report_date") or ""
         doc_type = h.get("doc_type") or "unknown"
         for pos in (h.get("positions") or []):
             weight = pos.get("target_weight_pct") or 0
-            if abs(weight) < 0.01:        # filter (a)
+            if abs(weight) < 0.01:        # filter (a): no weight → can't compute a gap
                 continue
-            if abs(weight) >= 90:         # filter (b)
+            if abs(weight) >= 90:         # filter (b): hallucinated single-position weight
                 continue
             name = (pos.get("name") or "").strip()
             if not name:
                 continue
-            key = name.lower()
-            if key not in themes:
-                themes[key] = {
-                    "name": name,
-                    "ticker": pos.get("ticker"),
-                    "ticker_source": pos.get("ticker_source"),
-                    "ticker_confidence": pos.get("ticker_confidence"),
-                    "asset_class": pos.get("asset_class", "other"),
-                    "direction": pos.get("direction", "long"),
-                    "target_weight_pct": weight,
-                    "commentary": pos.get("commentary", ""),
-                    "change_vs_prior": pos.get("change_vs_prior"),
-                    "source_report_date": report_date,
-                    "source_doc_type": doc_type,
-                    "source_pdf": h.get("source_pdf"),
-                    "first_seen": report_date,
-                    "last_seen": report_date,
-                    "appearances": 1,
-                    "is_core": key in core_names,
-                    "is_tactical": key not in core_names,
-                }
-            else:
-                t = themes[key]
-                t["appearances"] += 1
-                if report_date and report_date < (t["first_seen"] or report_date):
-                    t["first_seen"] = report_date
+            raw.append({
+                "name": name,
+                "ticker": (pos.get("ticker") or None),
+                "ticker_source": pos.get("ticker_source"),
+                "ticker_confidence": pos.get("ticker_confidence"),
+                "asset_class": pos.get("asset_class", "other"),
+                "direction": pos.get("direction", "long"),
+                "target_weight_pct": weight,
+                "commentary": pos.get("commentary", ""),
+                "change_vs_prior": pos.get("change_vs_prior"),
+                "report_date": report_date,
+                "doc_type": doc_type,
+                "source_pdf": h.get("source_pdf"),
+                # WAD entries are theme-level allocations; WWTHFTW entries are
+                # individual-stock constituents of a theme.
+                "is_theme_level": doc_type != "what_we_told_hedge_funds",
+            })
 
-    ordered = sorted(
-        themes.values(),
-        key=lambda t: (
-            not t["is_core"],
-            -float(t["target_weight_pct"]),
-            -t["appearances"],
-        ),
-    )
+    # ── 2. Canonicalize theme names via one Claude call ─────────────────────
+    # Collapses "Decoupling" / "Decoupling Theme" / "Decoupling / Rare Earths"
+    # into one theme, and rolls individual stocks (DroneShield → Military
+    # Drones) up to their parent theme.
+    from app.services.steno.ai_helpers import canonicalize_theme_names
+    canon_map = canonicalize_theme_names([r["name"] for r in raw])
+
+    core_canon: set[str] = set()
+    if core_report:
+        for p in core_report.get("positions") or []:
+            n = (p.get("name") or "").strip()
+            if n:
+                core_canon.add(canon_map.get(n, n))
+
+    # ── 3. Group raw entries by canonical theme ─────────────────────────────
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for r in raw:
+        canon = canon_map.get(r["name"], r["name"])
+        groups.setdefault(canon, []).append(r)
+
+    themes: list[dict[str, Any]] = []
+    for canon, entries in groups.items():
+        entries.sort(key=lambda e: e["report_date"], reverse=True)  # newest first
+        theme_level = [e for e in entries if e["is_theme_level"]]
+        # Representative = most-recent theme-level entry (its weight is the
+        # theme allocation). Fall back to most-recent entry of any kind.
+        rep = theme_level[0] if theme_level else entries[0]
+        # Constituents = individual-stock mentions (WWTHFTW), distinct by ticker,
+        # most-recent weight per ticker.
+        constituents: dict[str, dict[str, Any]] = {}
+        for e in entries:
+            if e["is_theme_level"]:
+                continue
+            tk = (e.get("ticker") or e["name"]).upper()
+            if tk not in constituents:
+                constituents[tk] = {
+                    "name": e["name"],
+                    "ticker": e.get("ticker"),
+                    "target_weight_pct": e["target_weight_pct"],
+                    "direction": e.get("direction"),
+                    "commentary": e.get("commentary"),
+                    "source_report_date": e["report_date"],
+                    "source_doc_type": e["doc_type"],
+                }
+        themes.append({
+            "name": canon,
+            "ticker": rep.get("ticker"),
+            "ticker_source": rep.get("ticker_source"),
+            "ticker_confidence": rep.get("ticker_confidence"),
+            "asset_class": rep.get("asset_class", "other"),
+            "direction": rep.get("direction", "long"),
+            "target_weight_pct": rep["target_weight_pct"],
+            "commentary": rep.get("commentary", ""),
+            "change_vs_prior": rep.get("change_vs_prior"),
+            "source_report_date": rep["report_date"],
+            "source_doc_type": rep["doc_type"],
+            "source_pdf": rep.get("source_pdf"),
+            "first_seen": min(e["report_date"] for e in entries),
+            "last_seen": max(e["report_date"] for e in entries),
+            "appearances": len(entries),
+            "is_core": canon in core_canon,
+            "is_tactical": canon not in core_canon,
+            "constituents": list(constituents.values()),
+        })
+
+    themes.sort(key=lambda t: (not t["is_core"], -float(t["target_weight_pct"]), -t["appearances"]))
 
     breakdown: dict[str, int] = {}
     for h in in_window:
@@ -178,7 +221,7 @@ def build_theme_universe(lookback_weeks: int = DEFAULT_UNIVERSE_LOOKBACK_WEEKS) 
         breakdown[dt] = breakdown.get(dt, 0) + 1
 
     return {
-        "themes": ordered,
+        "themes": themes,
         "reports_used": [
             {"date": h.get("report_date"), "doc_type": h.get("doc_type"), "source_pdf": h.get("source_pdf")}
             for h in in_window if h.get("report_date")
@@ -191,15 +234,25 @@ def build_theme_universe(lookback_weeks: int = DEFAULT_UNIVERSE_LOOKBACK_WEEKS) 
     }
 
 
-def universe_as_portfolio(lookback_weeks: int = DEFAULT_UNIVERSE_LOOKBACK_WEEKS) -> dict[str, Any] | None:
-    """Wrap the theme universe in a portfolio-shaped dict that the mirror engine
-    can consume directly. Returns None if no usable themes exist.
+def universe_as_portfolio(
+    lookback_weeks: int = DEFAULT_UNIVERSE_LOOKBACK_WEEKS,
+) -> dict[str, Any] | None:
+    """Wrap the theme universe in a portfolio-shaped dict the mirror engine can
+    consume directly.
+
+    The universe is already canonicalized — every theme is unique (duplicates
+    like "Decoupling" / "Decoupling Theme" / "Decoupling / Rare Earths" are
+    collapsed by the LLM canonicalization pass), and individual stocks from
+    WWTHFTW are rolled up as `constituents` of their parent theme. So we just
+    return the theme list straight through.
     """
     universe = build_theme_universe(lookback_weeks=lookback_weeks)
     themes = universe["themes"]
     if not themes:
         return None
+
     base = (load_store() or {}).get("latest") or {}
+    core_count = sum(1 for t in themes if t.get("is_core"))
     return {
         "report_date": base.get("report_date"),
         "report_title": f"Rolling theme universe ({universe['report_count']} reports, {lookback_weeks}w)",
@@ -214,6 +267,9 @@ def universe_as_portfolio(lookback_weeks: int = DEFAULT_UNIVERSE_LOOKBACK_WEEKS)
             "doc_type_breakdown": universe["doc_type_breakdown"],
             "reports_used": universe["reports_used"],
             "core_model_date": universe["core_model_date"],
+            "theme_count": len(themes),
+            "core_theme_count": core_count,
+            "tactical_theme_count": len(themes) - core_count,
         },
     }
 

@@ -28,6 +28,14 @@ def isolated_store(tmp_path, monkeypatch):
     return p
 
 
+@pytest.fixture(autouse=True)
+def _no_llm_canonicalize(monkeypatch):
+    """Stub the LLM theme-canonicalization to an identity map so universe tests
+    are deterministic and don't hit the Anthropic API."""
+    from app.services.steno import ai_helpers
+    monkeypatch.setattr(ai_helpers, "canonicalize_theme_names", lambda names: {n: n for n in names})
+
+
 def _make_portfolio(date: str, positions: list[dict]) -> dict:
     return {
         "report_date": date,

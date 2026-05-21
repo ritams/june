@@ -137,6 +137,9 @@ def build_mirror(
             "first_seen": pos.get("first_seen"),
             "last_seen": pos.get("last_seen"),
             "appearances": pos.get("appearances"),
+            # Constituents = tactical theme tickers Steno's mentioned that fold
+            # under this core theme (e.g. DRO/AVAV/DPRO for Military Drones).
+            "constituents": pos.get("constituents") or [],
             "members": [],
         })
 

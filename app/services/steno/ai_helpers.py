@@ -37,6 +37,8 @@ logger = logging.getLogger(__name__)
 PROFILES_PATH = STENO_ROOT / "ticker_profiles.json"
 PROFILE_MAX_AGE_DAYS = 14  # sector / business descriptions don't move week-to-week
 
+THEME_CANON_PATH = STENO_ROOT / "theme_canonical.json"
+
 PERPLEXITY_URL = "https://api.perplexity.ai/chat/completions"
 PERPLEXITY_MODEL = os.getenv("PERPLEXITY_MODEL", "sonar-pro")
 
@@ -156,6 +158,98 @@ def anthropic_tool(
 
 
 # ── ticker profile (Perplexity, shared across both classifier + resolver) ───
+
+def canonicalize_theme_names(names: list[str]) -> dict[str, str]:
+    """Group raw theme labels extracted from many Steno reports into canonical
+    themes via one Claude call.
+
+    Steno's reports name the same theme inconsistently — "Decoupling",
+    "Decoupling Theme", "Decoupling / Rare Earths & Nuclear Inputs" are one
+    theme; and WWTHFTW lists individual stocks ("DroneShield Ltd",
+    "AeroVironment Inc") that belong UNDER a broad theme ("Military Drones").
+    This returns {raw_name: canonical_theme_name} so the universe builder can
+    collapse duplicates and roll individual stocks up to their parent theme.
+
+    Cached at runtime/steno/theme_canonical.json keyed by the hash of the
+    sorted input names — re-runs only when the theme set changes.
+    """
+    import hashlib
+
+    names = sorted({n for n in names if n})
+    if not names:
+        return {}
+    cache_key = hashlib.md5("|".join(names).encode()).hexdigest()
+    cache = _load_json(THEME_CANON_PATH)
+    if cache_key in cache:
+        return cache[cache_key]
+
+    tool_schema = {
+        "type": "object",
+        "properties": {
+            "groups": {
+                "type": "array",
+                "description": "One entry per distinct underlying theme.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "canonical": {
+                            "type": "string",
+                            "description": "The clearest, most complete theme name for this group.",
+                        },
+                        "members": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Every input name belonging to this theme — copied verbatim.",
+                        },
+                    },
+                    "required": ["canonical", "members"],
+                },
+            }
+        },
+        "required": ["groups"],
+    }
+    numbered = "\n".join(f"{i+1}. {n}" for i, n in enumerate(names))
+    user_msg = (
+        "Below are investment theme / position labels extracted from a series of Steno "
+        "Research reports. Collapse the OBVIOUS DUPLICATES — but keep genuinely distinct "
+        "themes separate. Be conservative: when in doubt, keep two labels apart.\n\n"
+        "Rules:\n"
+        "• Merge ONLY when labels clearly describe the same underlying theme — wording "
+        "variants like 'Decoupling', 'Decoupling Theme', 'Decoupling / Rare Earths & "
+        "Nuclear Inputs' are one theme.\n"
+        "• An individual company name belongs UNDER its broad theme IF that broad theme "
+        "is also present in the list — 'DroneShield Ltd', 'AeroVironment Inc' group under "
+        "'Military Drones'; 'Nextracker Inc', 'Bloom Energy Corp' under 'Electricity / "
+        "Power Infrastructure'.\n"
+        "• If a label is a genuinely DISTINCT theme — a new sector or a specific ticker "
+        "Steno is calling out that doesn't clearly belong to any broad theme in the list "
+        "— keep it as its own group. Do NOT force-merge unrelated themes.\n"
+        "• Every input name MUST appear in exactly one group's members list, copied verbatim.\n"
+        "• Prefer an existing broad-theme label from the list as the canonical name.\n\n"
+        f"Labels:\n{numbered}"
+    )
+    result = anthropic_tool(
+        tool_name="group_themes",
+        tool_schema=tool_schema,
+        system="You group investment theme labels into canonical themes. Reply only via the tool.",
+        user_message=user_msg,
+        max_tokens=4096,
+    )
+    mapping: dict[str, str] = {}
+    if result:
+        for g in result.get("groups", []):
+            canon = (g.get("canonical") or "").strip()
+            for m in g.get("members", []):
+                if isinstance(m, str) and m.strip() and canon:
+                    mapping[m.strip()] = canon
+    # Anything Claude missed maps to itself — never drop a theme.
+    for n in names:
+        mapping.setdefault(n, n)
+
+    cache[cache_key] = mapping
+    _save_json(THEME_CANON_PATH, cache)
+    return mapping
+
 
 def fetch_ticker_profile(ticker: str, *, force: bool = False) -> dict[str, Any] | None:
     """Fresh, bucket-independent ticker fact-sheet from Perplexity.
