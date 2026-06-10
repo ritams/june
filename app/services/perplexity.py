@@ -58,6 +58,43 @@ If a field is unknown, use null. Do not include markdown.
         )
         return self._reading_from_payload(payload)
 
+    def latest_mit_overlay(self) -> dict[str, Any]:
+        """Fetch a fresh MIT (Macro Investing Tool) view from Julien Bittel via
+        Perplexity. The MIT report is published monthly on Real Vision / GMI.
+
+        Returns:
+          {
+            "summary": "1-2 sentence current MIT view, plain English",
+            "as_of": "ISO date of the most recent report Perplexity found",
+            "citations": [...]
+          }
+        """
+        payload = self._ask_json(
+            """
+You are extracting Julien Bittel's most recent Macro Investing Tool (MIT) view.
+Bittel publishes the MIT report monthly on Real Vision via Global Macro Investor.
+He covers the business cycle, growth + inflation dynamics, the 4 seasons
+(Spring/Summer/Autumn/Winter), and liquidity. Search recent (last 60 days)
+sources for his most recent published MIT note, podcast, or video summary.
+
+Return strictly this JSON:
+{
+  "summary": string,            // 1-2 sentence summary of Bittel's CURRENT MIT view
+                                // in his own framing (cycle position + liquidity).
+                                // Max 240 characters. No preamble, no "according to".
+  "as_of": string | null,       // ISO date (YYYY-MM-DD) of the most recent source.
+  "season": string | null       // One of: "Spring", "Summer", "Autumn", "Winter", null
+}
+If no recent source is found, set summary to "No recent MIT update located." and as_of to null.
+            """.strip()
+        )
+        return {
+            "summary": str(payload.get("summary") or "")[:300],
+            "as_of": payload.get("as_of"),
+            "season": payload.get("season"),
+            "citations": [str(c) for c in payload.get("citations", []) if c],
+        }
+
     def latest_korean_exports(self) -> PerplexityReading:
         payload = self._ask_json(
             """

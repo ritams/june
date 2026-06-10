@@ -17,18 +17,18 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.services.risk_budget import RiskBudget, compute as compute_rb
+from app.services import mit_overlay as _mit_overlay
+from app.services import slr_note as _slr_note
 
 
-# Per spec §12: MIT is a qualitative overlay, not a scoring input. Text is
-# static for now; can be sourced from a Steno report ingest later. Keeping
-# the field on the payload so the frontend can show it as soon as we have it.
-DEFAULT_MIT_OVERLAY = (
-    "Latest MIT view is broadly constructive on the business cycle, but liquidity "
-    "remains volatile. Use as context, not as a model override."
-)
+# Per spec §12: MIT is a qualitative overlay, not a scoring input.
+# Sourced from `mit_overlay.current()` which reads a Perplexity-fetched cache.
+# This constant is the last-resort fallback when no cache exists.
+DEFAULT_MIT_OVERLAY = _mit_overlay.DEFAULT_TEXT
 
 # Per spec §13: SLR/eSLR is a small plumbing note, not a core liquidity factor.
-DEFAULT_SLR_NOTE = "Bank Plumbing / SLR: Neutral"
+# Computed by `slr_note.current_note()` based on the eSLR effectiveness date.
+DEFAULT_SLR_NOTE = _slr_note.current_note()
 
 
 @dataclass
@@ -155,6 +155,7 @@ def build(
     season_detail: dict[str, Any] | None = None,
     mit_overlay: str | None = None,
     slr_note: str | None = None,
+    runtime_dir: Any = None,
 ) -> HermesState:
     """Assemble the CIO View from current macro state.
 
@@ -166,6 +167,11 @@ def build(
     """
     rb = compute_rb(scenario)
     now = datetime.now(ZoneInfo(timezone)).isoformat(timespec="minutes")
+    # Dynamic overlays — fall back to the static text if the cache is missing.
+    if mit_overlay is None and runtime_dir is not None:
+        mit_overlay = _mit_overlay.current(runtime_dir)
+    if slr_note is None:
+        slr_note = _slr_note.current_note()
     return HermesState(
         stance=rb.stance,
         risk_budget=rb.score,

@@ -17,7 +17,22 @@
   document.addEventListener("DOMContentLoaded", () => {
     bootHermes().catch((err) => console.error("Hermes boot failed", err));
     bootWhatIf().catch((err) => console.error("What-If boot failed", err));
+    bootSlrNote().catch((err) => console.error("SLR note fetch failed", err));
   });
+
+  // ─── SLR plumbing note (Liquidity page) ────────────────────────────────────
+  async function bootSlrNote() {
+    const el = document.querySelector("[data-slr-note]");
+    if (!el) return;
+    try {
+      const res = await fetch("/api/slr-note");
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data && data.note) el.textContent = data.note;
+    } catch (err) {
+      // Leave the static placeholder — non-fatal.
+    }
+  }
 
   async function bootHermes() {
     try {

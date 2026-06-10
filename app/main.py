@@ -21,7 +21,9 @@ from app.services.telegram import TelegramClient
 from app.services import cio_message as _cio_message
 from app.services import framework_portfolio as _fp
 from app.services import hermes_state as _hermes_state
+from app.services import mit_overlay as _mit_overlay
 from app.services import risk_budget as _risk_budget
+from app.services import slr_note as _slr_note
 from app.services import whatif as _whatif
 
 
@@ -110,6 +112,12 @@ def start_scheduler() -> None:
     scheduler.add_job(monitor_service.run_regime_change_check, "cron", hour=hour_or_six(settings.daily_card_time), minute=0)
     # Weekly Hermes CIO Telegram message — Monday 07:00 London (build-28th-may.md §11).
     scheduler.add_job(_send_hermes_weekly, "cron", day_of_week="mon", hour=7, minute=0, id="hermes_weekly", replace_existing=True)
+    # MIT overlay refresh — daily check at 06:45 London; only hits Perplexity if cache is >7d old.
+    def _mit_refresh_tick():
+        _mit_overlay.refresh_async(settings.runtime_dir, dashboard_service.perplexity, force=False)
+    scheduler.add_job(_mit_refresh_tick, "cron", hour=6, minute=45, id="mit_overlay_daily", replace_existing=True)
+    # Also try a one-shot async refresh at startup so a fresh deploy gets MIT data without waiting a day.
+    _mit_refresh_tick()
 
     # Steno PDF download + extraction — once a day at STENO_PIPELINE_TIME (HH:MM, default 07:00).
     # New Real Vision reports typically land overnight London time, so a morning pull catches them.
@@ -454,7 +462,35 @@ def _current_hermes_state() -> _hermes_state.HermesState:
         cycle_state=cycle_state,
         timezone=settings.app_timezone,
         season_detail=season_detail,
+        runtime_dir=settings.runtime_dir,
     )
+
+
+@app.get("/api/slr-note")
+def slr_note_endpoint() -> dict:
+    """Dynamic SLR plumbing classification per build-28th-may.md §13.
+    Used by the Liquidity page footer."""
+    return _slr_note.classify()
+
+
+@app.get("/api/mit-overlay")
+def mit_overlay_endpoint() -> dict:
+    """Cached MIT overlay payload (the Hermes card already embeds this in /state).
+    Exposed separately so the frontend can show the source date + citations."""
+    payload = _mit_overlay.load(settings.runtime_dir) or {"summary": _mit_overlay.DEFAULT_TEXT}
+    return payload
+
+
+@app.post("/api/actions/refresh-mit-overlay")
+def refresh_mit_overlay() -> dict:
+    """Force a fresh MIT overlay pull from Perplexity. Also runs automatically
+    on the daily refresh tick when the cache is older than 7 days."""
+    payload = _mit_overlay.refresh(
+        settings.runtime_dir,
+        dashboard_service.perplexity,
+        force=True,
+    )
+    return {"refreshed": payload is not None, "payload": payload}
 
 
 @app.get("/api/hermes/state")
