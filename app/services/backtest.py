@@ -291,6 +291,12 @@ class BacktestService:
         self.cache_path = settings.runtime_dir / "backtest_results.json"
         self.lock = threading.Lock()
         self._refresh_thread: threading.Thread | None = None
+        # In-memory cache for factor_series() — multiple consumers (Risk Budget,
+        # PhaseService, FrameworkPortfolio) call this on the same request. Hitting
+        # FRED 8x per consumer trips the 429 limit quickly.
+        self._factor_cache: dict[str, pd.Series] | None = None
+        self._factor_cache_at: float = 0.0
+        self._factor_cache_ttl_seconds: float = 6 * 60 * 60
 
     def ensure_cache_async(self) -> None:
         if not self.should_refresh():
@@ -439,14 +445,24 @@ class BacktestService:
     # --- Public hooks for the correlation engine (Phase 4c) ---
 
     def factor_series(self) -> dict[str, pd.Series]:
-        """Return the 7 macro factor series indexed by month-end. Used by correlations."""
+        """Return the 7 macro factor series indexed by month-end. Used by correlations.
+
+        In-memory cached for `_factor_cache_ttl_seconds` because every consumer
+        (Risk Budget, PhaseService, FrameworkPortfolio) calls this on the same
+        request — without the cache they each pull ~8 FRED series and quickly
+        trip the rate limit.
+        """
+        import time as _time
+        with self.lock:
+            if self._factor_cache is not None and (_time.time() - self._factor_cache_at) < self._factor_cache_ttl_seconds:
+                return self._factor_cache
         dxy_daily = self._download_close(ASSET_SPECS["DXY"]["ticker"], ASSET_SPECS["DXY"]["start"])
         macro = self._load_macro_data(dxy_daily)
         monthly = macro["monthly"]
         spy_close = self._download_close(ASSET_SPECS["SPY"]["ticker"], ASSET_SPECS["SPY"]["start"])
         spy_monthly = _as_monthly_last(spy_close)
         risk_on_off = spy_monthly.pct_change() * 100
-        return {
+        out = {
             "risk_on_off": risk_on_off.dropna(),
             "growth": monthly["ism_yoy"].dropna(),
             "inflation": monthly["cpi_yoy"].dropna(),
@@ -455,6 +471,10 @@ class BacktestService:
             "dollar": monthly["dxy_yoy"].dropna(),
             "oil": monthly["oil_yoy"].dropna(),
         }
+        with self.lock:
+            self._factor_cache = out
+            self._factor_cache_at = _time.time()
+        return out
 
     def load_universe(self) -> dict[str, pd.Series]:
         """Daily price series for every asset + benchmark + cash proxy. Used by correlations."""

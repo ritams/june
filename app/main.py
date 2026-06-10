@@ -18,6 +18,11 @@ from app.services.scenario_inputs import auto_fill_scenario
 from app.services.sheets import SheetsClient
 from app.services.state import StateStore
 from app.services.telegram import TelegramClient
+from app.services import cio_message as _cio_message
+from app.services import framework_portfolio as _fp
+from app.services import hermes_state as _hermes_state
+from app.services import risk_budget as _risk_budget
+from app.services import whatif as _whatif
 
 
 settings = get_settings()
@@ -42,8 +47,43 @@ monitor_service = MonitorService(
     phase_service=phase_service,
 )
 
-app = FastAPI(title="DJG Advisory", version="0.2.0")
+# ── Build the MCP server BEFORE FastAPI so we can pass its lifespan ─────────
+# Hermes Agent connects to http://127.0.0.1:8000/mcp. The MCP server reuses the
+# already-initialized service singletons rather than HTTP-round-tripping.
+# fastmcp REQUIRES its lifespan attached to the parent ASGI app.
+_mcp_lifespan = None
+_mcp_sub_app = None
+try:
+    from app.mcp_server import build_mcp_server as _build_mcp_server
+
+    _mcp_instance = _build_mcp_server(
+        dashboard_service=dashboard_service,
+        backtest_service=backtest_service,
+        correlation_service=correlation_service,
+        phase_service=phase_service,
+        state_store=state_store,
+        settings=settings,
+        telegram_client=telegram_client,
+        hermes_state_module=_hermes_state,
+        risk_budget_module=_risk_budget,
+        whatif_module=_whatif,
+        framework_portfolio_module=_fp,
+        cio_message_module=_cio_message,
+        auto_fill_scenario=auto_fill_scenario,
+        current_state_fn=lambda: _current_hermes_state(),
+    )
+    # fastmcp >=2.0 exposes an HTTP ASGI app via .http_app().
+    # We mount it at /mcp on the parent app, so the sub-app's internal path is "/".
+    _mcp_sub_app = _mcp_instance.http_app(path="/") if hasattr(_mcp_instance, "http_app") else _mcp_instance.sse_app(path="/")
+    _mcp_lifespan = getattr(_mcp_sub_app, "lifespan", None) or getattr(_mcp_instance, "lifespan", None)
+except Exception:
+    import logging as _logging
+    _logging.getLogger("mcp").exception("Failed to build MCP app — dashboard will run without MCP")
+
+app = FastAPI(title="DJG Advisory", version="0.2.0", lifespan=_mcp_lifespan)
 app.mount("/static", StaticFiles(directory=str(ROOT_DIR / "static")), name="static")
+if _mcp_sub_app is not None:
+    app.mount("/mcp", _mcp_sub_app)
 scheduler = BackgroundScheduler(timezone=settings.app_timezone)
 
 
@@ -68,6 +108,8 @@ def start_scheduler() -> None:
     scheduler.add_job(backtest_service.refresh_cache, "cron", day_of_week="sun", hour=6, minute=0)
     scheduler.add_job(correlation_service.refresh_cache, "cron", day=1, hour=6, minute=30)
     scheduler.add_job(monitor_service.run_regime_change_check, "cron", hour=hour_or_six(settings.daily_card_time), minute=0)
+    # Weekly Hermes CIO Telegram message — Monday 07:00 London (build-28th-may.md §11).
+    scheduler.add_job(_send_hermes_weekly, "cron", day_of_week="mon", hour=7, minute=0, id="hermes_weekly", replace_existing=True)
 
     # Steno PDF download + extraction — once a day at STENO_PIPELINE_TIME (HH:MM, default 07:00).
     # New Real Vision reports typically land overnight London time, so a morning pull catches them.
@@ -180,6 +222,11 @@ def favicon() -> FileResponse:
 @app.get("/dashboard", include_in_schema=False)
 def dashboard_page() -> FileResponse:
     return _static_page("dashboard.html")
+
+
+@app.get("/transcripts/bittel-mit-april-2026", include_in_schema=False)
+def bittel_transcript_page() -> FileResponse:
+    return _static_page("bittel-transcript.html")
 
 
 @app.get("/liquidity", include_in_schema=False)
@@ -340,6 +387,211 @@ def mirror_set_override(ticker: str, bucket: str | None = None, clear: bool = Fa
 def mirror_list_overrides() -> dict:
     from app.services.steno import bucket_classifier as _bc
     return {"overrides": _bc.load_overrides()}
+
+
+# ── Hermes CIO endpoints (tools the future GPT 5.5 agent will call) ──────────
+#
+# These match the 9 functions in build-28th-may.md §10. The agent layer is
+# deferred; for now the endpoints return deterministic state derived from the
+# existing dashboard data.
+
+
+_HERMES_SNAPSHOT_TIMEOUT_SECONDS = 8.0
+
+
+def _current_hermes_state() -> _hermes_state.HermesState:
+    """Assemble the CIO View. Resilient to a cold dashboard snapshot: if the
+    snapshot path hangs (FRED + yfinance can take a minute on a fresh process)
+    or raises, fall back to "Unknown" for the liquidity/cycle status fields and
+    still surface Risk Budget + Season + summary, which are derived independently.
+
+    The snapshot call is run in a worker thread with an 8-second deadline. A
+    long-running snapshot won't block the CIO card render — important because
+    the card is the dashboard's headline element.
+    """
+    import concurrent.futures
+
+    def _bounded(fn, *args, default=None, timeout: float = _HERMES_SNAPSHOT_TIMEOUT_SECONDS):
+        """Run `fn(*args)` with a hard deadline. The worker thread is not awaited
+        on timeout — important because ThreadPoolExecutor's context-manager __exit__
+        otherwise blocks until the worker finishes."""
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        try:
+            future = pool.submit(fn, *args)
+            return future.result(timeout=timeout)
+        except Exception:
+            return default
+        finally:
+            # cancel_futures=True only matters for queued (not-yet-started) tasks;
+            # the started worker continues in the background but we no longer wait.
+            pool.shutdown(wait=False, cancel_futures=True)
+
+    snapshot = _bounded(dashboard_service.get_snapshot, False, default=None)
+    if snapshot:
+        liquidity_state = snapshot["dashboards"]["liquidity"]["status"]
+        cycle_state = snapshot["dashboards"]["business-cycle"]["status"]
+    else:
+        liquidity_state = "Unknown"
+        cycle_state = "Unknown"
+
+    scenario = _bounded(
+        auto_fill_scenario, {}, backtest_service,
+        default={k: 0.0 for k in ("risk_on_off", "growth", "inflation", "short_rates", "liquidity", "dollar", "oil")},
+    )
+
+    season_reading = _bounded(phase_service.get, False, default=None)
+    if season_reading:
+        season_label = season_reading.label
+        season_detail = season_reading.to_dict()
+    else:
+        season_label = "Unknown"
+        season_detail = {}
+
+    return _hermes_state.build(
+        scenario=scenario,
+        season=season_label,
+        liquidity_state=liquidity_state,
+        cycle_state=cycle_state,
+        timezone=settings.app_timezone,
+        season_detail=season_detail,
+    )
+
+
+@app.get("/api/hermes/state")
+def hermes_state() -> dict:
+    """get_current_dashboard_state() — full CIO View payload for the frontend card."""
+    return _current_hermes_state().to_dict()
+
+
+@app.get("/api/hermes/risk-budget")
+def hermes_risk_budget() -> dict:
+    """get_current_risk_budget() — just the score + stance + components."""
+    snapshot = dashboard_service.get_snapshot(force=False)
+    scenario = auto_fill_scenario(snapshot, backtest_service)
+    return _risk_budget.compute(scenario).to_dict()
+
+
+@app.get("/api/hermes/season")
+def hermes_season() -> dict:
+    """get_current_macro_season() — Bittel 4-season classification via PhaseService."""
+    reading = phase_service.get(force=False)
+    return reading.to_dict()
+
+
+@app.get("/api/hermes/liquidity-state")
+def hermes_liquidity_state() -> dict:
+    """get_liquidity_state() — current dashboard liquidity status + metrics."""
+    snapshot = dashboard_service.get_snapshot(force=False)
+    return {
+        "status": snapshot["dashboards"]["liquidity"]["status"],
+        "summary": snapshot["dashboards"]["liquidity"].get("summary"),
+        "metrics": snapshot["dashboards"]["liquidity"]["metrics"],
+    }
+
+
+@app.get("/api/hermes/cycle-state")
+def hermes_cycle_state() -> dict:
+    """get_cycle_state() — current dashboard business-cycle status + metrics."""
+    snapshot = dashboard_service.get_snapshot(force=False)
+    return {
+        "status": snapshot["dashboards"]["business-cycle"]["status"],
+        "summary": snapshot["dashboards"]["business-cycle"].get("summary"),
+        "metrics": snapshot["dashboards"]["business-cycle"]["metrics"],
+    }
+
+
+@app.get("/api/hermes/allocation")
+def hermes_allocation() -> dict:
+    """get_current_allocation() — softmax+caps allocation engine on the live scenario."""
+    snapshot = dashboard_service.get_snapshot(force=False)
+    scenario = auto_fill_scenario(snapshot, backtest_service)
+    ranking = correlation_service.rank_scenario(scenario)
+    return {
+        "available": ranking.get("available", False),
+        "allocation": ranking.get("allocation"),
+        "scenario": scenario,
+    }
+
+
+@app.get("/api/hermes/whatif/options")
+def hermes_whatif_options() -> dict:
+    return _whatif.list_options()
+
+
+@app.post("/api/hermes/whatif")
+def hermes_whatif(
+    amount: float = 100000.0,
+    asset_key: str | None = None,
+    basket_key: str | None = None,
+    start_date: str = "2020-01-01",
+    end_date: str | None = None,
+    mode: str = "buy_and_hold",
+) -> dict:
+    """run_what_if_outcome() — buy-and-hold a single asset OR a preset basket OR
+    the Framework Portfolio (basket_key='FRAMEWORK_PORTFOLIO')."""
+    if basket_key and basket_key.upper() == "FRAMEWORK_PORTFOLIO":
+        return hermes_framework_portfolio(amount=amount, start_date=start_date, end_date=end_date)
+    try:
+        result = _whatif.run(
+            amount=amount,
+            asset_key=asset_key,
+            basket_key=basket_key,
+            start_date=start_date,
+            end_date=end_date,
+            fetcher=backtest_service._download_close,
+            mode=mode,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return result.to_dict()
+
+
+@app.post("/api/hermes/framework-portfolio")
+def hermes_framework_portfolio(
+    amount: float = 100000.0,
+    start_date: str = "2010-01-01",
+    end_date: str | None = None,
+) -> dict:
+    """run_framework_portfolio_outcome() — backtest the dashboard's own allocation
+    framework (Risk Budget → band → basket, monthly rebalance)."""
+    try:
+        result = _fp.run_backtest(
+            initial_amount=amount,
+            start_date=start_date,
+            end_date=end_date,
+            factor_series=backtest_service.factor_series(),
+            price_fetcher=backtest_service._download_close,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return result.to_dict()
+
+
+@app.get("/api/hermes/weekly-message")
+def hermes_weekly_message_preview() -> dict:
+    """generate_weekly_cio_message() — preview without persisting/sending."""
+    curr = _current_hermes_state()
+    state = state_store.load()
+    prev = state.get("hermes_weekly")
+    return {"message": _cio_message.render(curr, prev), "state": curr.to_dict()}
+
+
+@app.post("/api/actions/send-weekly-message")
+def hermes_send_weekly_message() -> dict:
+    """send_weekly_telegram_message() — render, persist this week's snapshot for
+    next-week diffing, and send to Telegram."""
+    return _send_hermes_weekly()
+
+
+def _send_hermes_weekly() -> dict:
+    curr = _current_hermes_state()
+    message = _cio_message.generate_and_persist(curr, state_store)
+    sent, err = (False, None)
+    try:
+        sent = telegram_client.send_message(message)
+    except Exception as exc:  # pragma: no cover — network
+        err = str(exc)
+    return {"telegram_sent": sent, "telegram_error": err, "message": message}
 
 
 @app.get("/api/health")

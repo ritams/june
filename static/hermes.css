@@ -1,0 +1,285 @@
+/* Hermes CIO View + What-If Outcome — styling.
+   Inherits the DJG dark palette via existing vars in djg.css; adds restraint-first
+   spacing and a small score-bar widget. */
+
+.hermes-cio {
+  background: var(--djg-panel, #11161b);
+  border: 1px solid var(--djg-line, #232c34);
+  border-left: 3px solid #60a5fa;
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin: 0 0 18px;
+}
+
+.hermes-cio-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 14px;
+}
+
+.hermes-label {
+  font: 11px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #8b96a0;
+  font-weight: 600;
+}
+
+.hermes-updated {
+  font-size: 12px;
+  color: #5d6770;
+  font-family: -apple-system, sans-serif;
+}
+
+.hermes-cio-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1.2fr 1fr;
+  gap: 24px;
+  align-items: start;
+  margin-bottom: 14px;
+}
+
+.hermes-row-label {
+  font: 10px/1 -apple-system, sans-serif;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #5d6770;
+  margin-bottom: 6px;
+}
+
+.hermes-stance-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #e6edf3;
+  letter-spacing: -0.3px;
+  margin-bottom: 4px;
+}
+
+.hermes-stance-sub {
+  font-size: 13px;
+  color: #8b96a0;
+  font-family: -apple-system, sans-serif;
+}
+
+.hermes-score-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #4ade80;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 6px;
+}
+
+.hermes-score-bar {
+  position: relative;
+  height: 8px;
+  background: #1a2026;
+  border: 1px solid #232c34;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.hermes-score-fill {
+  height: 100%;
+  width: 50%;
+  background: linear-gradient(90deg, #f87171 0%, #fbbf24 50%, #4ade80 100%);
+  transition: width 0.6s ease;
+}
+
+.hermes-score-band-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: #5d6770;
+  font-family: -apple-system, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.hermes-meta {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 14px;
+}
+
+.hermes-meta li {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #8b96a0;
+  font-family: -apple-system, sans-serif;
+}
+
+.hermes-meta li em {
+  font-style: normal;
+  color: #e6edf3;
+  font-weight: 600;
+}
+
+.hermes-summary {
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid #232c34;
+  color: #e6edf3;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.hermes-overlays {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hermes-overlay {
+  margin: 0;
+  font-size: 12px;
+  color: #8b96a0;
+  font-family: -apple-system, sans-serif;
+}
+
+.hermes-overlay span {
+  color: #5d6770;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 10px;
+  margin-right: 6px;
+}
+
+.hermes-overlay em {
+  font-style: normal;
+  color: #e6edf3;
+}
+
+/* What-If panel */
+
+.hermes-whatif-form {
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr 1fr auto;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.hermes-whatif-form label {
+  display: flex;
+  flex-direction: column;
+  font: 10px/1 -apple-system, sans-serif;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #5d6770;
+  gap: 4px;
+}
+
+.hermes-whatif-form input,
+.hermes-whatif-form select {
+  background: #181f25;
+  border: 1px solid #232c34;
+  border-radius: 5px;
+  color: #e6edf3;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: -apple-system, "Menlo", monospace;
+}
+
+.hermes-whatif-form input:focus,
+.hermes-whatif-form select:focus {
+  outline: none;
+  border-color: #60a5fa;
+}
+
+.hermes-whatif-form button[type=submit] {
+  align-self: end;
+  padding: 8px 16px;
+}
+
+.hermes-whatif-metrics {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+  padding: 12px 0;
+  border-top: 1px solid #232c34;
+  border-bottom: 1px solid #232c34;
+  margin-bottom: 12px;
+}
+
+.hermes-whatif-metrics div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hermes-whatif-metrics span {
+  font: 10px/1 -apple-system, sans-serif;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #5d6770;
+}
+
+.hermes-whatif-metrics em {
+  font-style: normal;
+  font-size: 15px;
+  font-weight: 600;
+  color: #e6edf3;
+  font-variant-numeric: tabular-nums;
+}
+
+.hermes-whatif-chart {
+  width: 100%;
+  height: 100px;
+  color: #60a5fa;
+  margin-bottom: 8px;
+}
+
+.hermes-whatif-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hermes-warning {
+  font-size: 11px;
+  color: #fbbf24;
+  font-family: -apple-system, sans-serif;
+}
+
+.hermes-whatif-help {
+  font-size: 12px;
+  color: #8b96a0;
+  font-family: -apple-system, sans-serif;
+  margin: 8px 0 0;
+}
+
+.hermes-whatif-help strong {
+  color: #e6edf3;
+  font-weight: 600;
+}
+
+/* SLR plumbing note (Liquidity page) — small, deliberately understated */
+.djg-slr-note {
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  background: rgba(96, 165, 250, 0.04);
+  border-left: 2px solid #475561;
+  border-radius: 4px;
+  font: 12px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #8b96a0;
+}
+
+/* Mobile */
+@media (max-width: 720px) {
+  .hermes-cio-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .hermes-whatif-form {
+    grid-template-columns: 1fr 1fr;
+  }
+  .hermes-whatif-metrics {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}

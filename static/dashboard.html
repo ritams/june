@@ -8,7 +8,9 @@
     <link rel="apple-touch-icon" href="/static/favicon.svg" />
     <link rel="stylesheet" href="/static/app.css" />
     <link rel="stylesheet" href="/static/djg.css" />
+    <link rel="stylesheet" href="/static/hermes.css" />
     <script src="/static/djg.js" defer></script>
+    <script src="/static/hermes.js" defer></script>
   </head>
   <body class="djg" data-page="djg">
     <div class="djg-shell">
@@ -24,6 +26,41 @@
           <a href="/steno">Steno Mirror</a>
         </nav>
       </header>
+
+      <!-- HERMES CIO VIEW · top-of-page summary (build-28th-may.md §2) -->
+      <section class="hermes-cio" aria-label="Hermes CIO View" data-hermes-card>
+        <header class="hermes-cio-head">
+          <span class="hermes-label">HERMES CIO VIEW</span>
+          <span class="hermes-updated" data-hermes-updated>—</span>
+        </header>
+        <div class="hermes-cio-grid">
+          <div class="hermes-stance">
+            <div class="hermes-row-label">CURRENT STANCE</div>
+            <div class="hermes-stance-value" data-hermes-stance>—</div>
+          </div>
+          <div class="hermes-score">
+            <div class="hermes-row-label">RISK BUDGET</div>
+            <div class="hermes-score-value" data-hermes-score>—</div>
+            <div class="hermes-score-bar"><div class="hermes-score-fill" data-hermes-score-fill></div></div>
+            <div class="hermes-score-band-labels">
+              <span>0</span><span>20</span><span>40</span><span>60</span><span>80</span><span>100</span>
+            </div>
+          </div>
+          <ul class="hermes-meta">
+            <li><span>Capital Deployment</span><em data-hermes-deploy>—</em></li>
+            <li><span>Cash Reserve</span><em data-hermes-cash>—</em></li>
+            <li><span>Macro Season</span><em data-hermes-season>—</em></li>
+            <li><span>Liquidity State</span><em data-hermes-liquidity>—</em></li>
+            <li><span>Cycle State</span><em data-hermes-cycle>—</em></li>
+            <li><span>Confidence</span><em data-hermes-confidence>—</em></li>
+          </ul>
+        </div>
+        <p class="hermes-summary" data-hermes-summary>Loading…</p>
+        <div class="hermes-overlays">
+          <p class="hermes-overlay"><span>MIT overlay:</span> <em data-hermes-mit>—</em></p>
+          <p class="hermes-overlay"><span>Plumbing:</span> <em data-hermes-slr>—</em></p>
+        </div>
+      </section>
 
       <section class="djg-headline" aria-label="Phase and signal">
         <div class="djg-phase" data-phase-card>
@@ -68,6 +105,43 @@
           <summary>Bottom 5 to avoid</summary>
           <div data-allocation-bottom></div>
         </details>
+      </section>
+
+      <!-- WHAT-IF OUTCOME · build-28th-may.md §6-8 -->
+      <section class="djg-panel hermes-whatif" aria-label="What-if outcome">
+        <header class="djg-panel-head">
+          <span class="djg-panel-num">01b</span>
+          <h2>What-If Outcome</h2>
+          <span class="djg-panel-aside">Buy &amp; hold</span>
+        </header>
+        <form class="hermes-whatif-form" data-whatif-form>
+          <label>Amount £
+            <input type="number" data-whatif-amount value="100000" min="100" step="100" />
+          </label>
+          <label>Asset / Basket
+            <select data-whatif-target></select>
+          </label>
+          <label>Start
+            <input type="date" data-whatif-start value="2020-01-01" />
+          </label>
+          <label>End
+            <input type="date" data-whatif-end />
+          </label>
+          <button type="submit" class="djg-pill djg-pill-action">Run</button>
+        </form>
+        <div class="hermes-whatif-result" data-whatif-result hidden>
+          <div class="hermes-whatif-metrics">
+            <div><span>Ending Value</span><em data-whatif-ending>—</em></div>
+            <div><span>Total Return</span><em data-whatif-total>—</em></div>
+            <div><span>Annualised</span><em data-whatif-cagr>—</em></div>
+            <div><span>Max Drawdown</span><em data-whatif-mdd>—</em></div>
+            <div><span>Best Month</span><em data-whatif-best>—</em></div>
+            <div><span>Worst Month</span><em data-whatif-worst>—</em></div>
+          </div>
+          <svg class="hermes-whatif-chart" data-whatif-chart viewBox="0 0 400 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <div class="hermes-whatif-warnings" data-whatif-warnings></div>
+        </div>
+        <p class="hermes-whatif-help">Pick a single asset, a preset basket, or <strong>Framework Portfolio</strong> to backtest the dashboard's own allocation.</p>
       </section>
 
       <section class="djg-panel" aria-label="Live macro factors">
