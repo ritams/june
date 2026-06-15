@@ -7,6 +7,14 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
+
+from app.services.auth import (
+    AuthMiddleware,
+    build_oauth,
+    current_user,
+    register_auth_routes,
+)
 
 from app.config import ROOT_DIR, get_settings
 from app.services.backtest import BacktestService
@@ -83,9 +91,35 @@ except Exception:
     _logging.getLogger("mcp").exception("Failed to build MCP app — dashboard will run without MCP")
 
 app = FastAPI(title="DJG Advisory", version="0.2.0", lifespan=_mcp_lifespan)
+
+# Middleware ordering: Starlette wraps middlewares so the LAST one added is
+# the OUTERMOST (runs first on each request). We want:
+#   request → SessionMiddleware → AuthMiddleware → app
+# so AuthMiddleware can read `request.session`. Therefore Auth is added first
+# (becomes inner), Session is added second (becomes outer).
+import secrets as _secrets
+
+# Auth gate — applies email-whitelist OAuth to everything except /static/* /auth/* /favicon.*
+# and Bearer-token check to /mcp/*. No-op when GOOGLE_CLIENT_ID is unset.
+app.add_middleware(AuthMiddleware, settings=settings)
+# Session middleware — required by Authlib for OAuth state + our user session.
+_session_secret = settings.auth_session_secret or _secrets.token_urlsafe(32)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=_session_secret,
+    same_site="lax",
+    https_only=False,   # we sit behind a tunnel that handles TLS
+    max_age=14 * 24 * 3600,  # 14 days
+)
+
 app.mount("/static", StaticFiles(directory=str(ROOT_DIR / "static")), name="static")
 if _mcp_sub_app is not None:
     app.mount("/mcp", _mcp_sub_app)
+
+# Register /auth/login, /auth/callback, /auth/logout, /auth/me
+_oauth = build_oauth(settings)
+register_auth_routes(app, settings, _oauth)
+
 scheduler = BackgroundScheduler(timezone=settings.app_timezone)
 
 

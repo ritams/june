@@ -38,6 +38,16 @@ class Settings:
     port: int
     global_m2_proxy_series_id: str | None
     runtime_dir: Path
+    google_client_id: str | None
+    google_client_secret: str | None
+    auth_allowed_emails: tuple[str, ...]
+    auth_session_secret: str | None
+    auth_redirect_uri: str | None
+    mcp_api_key: str | None
+
+    @property
+    def auth_enabled(self) -> bool:
+        return bool(self.google_client_id and self.google_client_secret and self.auth_session_secret)
 
     @property
     def telegram_enabled(self) -> bool:
@@ -76,4 +86,14 @@ def get_settings() -> Settings:
         port=int(os.getenv("PORT", "8000")),
         global_m2_proxy_series_id=os.getenv("GLOBAL_M2_PROXY_SERIES_ID") or None,
         runtime_dir=runtime_dir,
+        google_client_id=os.getenv("GOOGLE_CLIENT_ID") or None,
+        google_client_secret=os.getenv("GOOGLE_CLIENT_SECRET") or None,
+        auth_allowed_emails=tuple(
+            e.strip().lower()
+            for e in (os.getenv("AUTH_ALLOWED_EMAILS") or "").split(",")
+            if e.strip()
+        ),
+        auth_session_secret=os.getenv("AUTH_SESSION_SECRET") or None,
+        auth_redirect_uri=os.getenv("AUTH_REDIRECT_URI") or None,
+        mcp_api_key=os.getenv("MCP_API_KEY") or None,
     )

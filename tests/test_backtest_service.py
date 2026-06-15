@@ -29,6 +29,12 @@ def _settings(tmp_path: Path) -> Settings:
         port=8000,
         global_m2_proxy_series_id=None,
         runtime_dir=tmp_path,
+        google_client_id=None,
+        google_client_secret=None,
+        auth_allowed_emails=(),
+        auth_session_secret=None,
+        auth_redirect_uri=None,
+        mcp_api_key=None,
     )
 
 
