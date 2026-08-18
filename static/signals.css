@@ -1,0 +1,487 @@
+/*
+  Technical Signals Layer widget styles — docs/technical-signals-layer-scope.md §9.
+
+  Builds on the tokens in djg.css (--djg-bg, --djg-line, --djg-pos, …) rather
+  than defining a parallel palette, so this page stays visually continuous with
+  the rest of the dashboard. §9 asks for a "dark-navy aesthetic"; the existing
+  shell is a dark neutral, and the band colours below carry the signal semantics.
+
+  Band colour semantics, used consistently in the table, the badges and the
+  lookup card:
+    Prime      accent yellow  — act now
+    Strong     green          — building
+    Watch      info blue      — on the radar
+    No signal  flat grey      — nothing here
+  Counter-trend (§5's regime gate) overlays a warn-amber border rather than
+  changing the band colour, because it is a caveat on the score, not a band.
+*/
+
+:root {
+  --sig-prime: var(--djg-accent);
+  --sig-strong: var(--djg-pos);
+  --sig-watch: var(--djg-info);
+  --sig-none: var(--djg-flat);
+  --sig-exit: var(--djg-neg);
+}
+
+/* ── Header (§9) ─────────────────────────────────────────────────────────── */
+
+.sig-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 1.25rem 0 1rem;
+  border-bottom: 1px solid var(--djg-line);
+}
+
+.sig-header-right {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: flex-end;
+  min-width: 18rem;
+}
+
+.sig-regime-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.sig-chip {
+  font-family: var(--djg-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--djg-line);
+  border-radius: 2px;
+  color: var(--djg-text-dim);
+  background: var(--djg-bg-2);
+}
+.sig-chip[data-regime="Bullish"] { color: var(--sig-strong); border-color: var(--sig-strong); }
+.sig-chip[data-regime="Bearish"] { color: var(--djg-neg); border-color: var(--djg-neg); }
+.sig-chip[data-regime="Neutral"] { color: var(--djg-text-dim); }
+
+.sig-meta {
+  display: flex;
+  gap: 0.75rem;
+  font-family: var(--djg-mono);
+  font-size: 0.7rem;
+  color: var(--djg-text-muted);
+}
+.sig-meta em { color: var(--djg-text-dim); font-style: normal; }
+
+.sig-stale-notice { color: var(--djg-warn); }
+
+/* ── Search (§6.1) ───────────────────────────────────────────────────────── */
+
+.sig-search { display: flex; gap: 0.4rem; }
+
+.sig-search-input {
+  background: var(--djg-bg-2);
+  border: 1px solid var(--djg-line);
+  color: var(--djg-text);
+  font-family: var(--djg-mono);
+  font-size: 0.8rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 2px;
+  min-width: 12rem;
+}
+.sig-search-input:focus { outline: none; border-color: var(--djg-accent); }
+
+.sig-search-hint {
+  font-family: var(--djg-mono);
+  font-size: 0.65rem;
+  color: var(--djg-text-muted);
+}
+
+/* ── Buttons and inputs ──────────────────────────────────────────────────── */
+
+.sig-btn {
+  font-family: var(--djg-mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.45rem 0.7rem;
+  border-radius: 2px;
+  border: 1px solid var(--djg-line);
+  background: var(--djg-bg-3);
+  color: var(--djg-text-dim);
+  cursor: pointer;
+  transition: border-color 120ms, color 120ms;
+}
+.sig-btn:hover { border-color: var(--djg-accent); color: var(--djg-text); }
+.sig-btn-primary { background: var(--djg-accent); color: #10141a; border-color: var(--djg-accent); font-weight: 600; }
+.sig-btn-primary:hover { color: #000; }
+.sig-btn-ghost { background: transparent; }
+.sig-btn:disabled { opacity: 0.45; cursor: default; }
+.sig-btn-danger:hover { border-color: var(--djg-neg); color: var(--djg-neg); }
+
+.sig-select {
+  background: var(--djg-bg-2);
+  border: 1px solid var(--djg-line);
+  color: var(--djg-text-dim);
+  font-family: var(--djg-mono);
+  font-size: 0.7rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 2px;
+}
+
+.sig-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--djg-mono);
+  font-size: 0.7rem;
+  color: var(--djg-text-dim);
+  cursor: pointer;
+}
+
+/* ── Intake strip (§7.4) ─────────────────────────────────────────────────── */
+
+.sig-intake {
+  margin: 1rem 0;
+  border: 1px solid var(--djg-accent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--djg-accent) 6%, var(--djg-bg-2));
+  padding: 0.85rem 1rem;
+}
+
+.sig-intake-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.6rem;
+}
+
+.sig-intake-label {
+  font-family: var(--djg-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  color: var(--djg-accent);
+}
+
+.sig-intake-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--djg-line-soft);
+  font-size: 0.8rem;
+}
+
+.sig-intake-summary { color: var(--djg-text); }
+.sig-intake-source {
+  font-family: var(--djg-mono);
+  font-size: 0.65rem;
+  color: var(--djg-accent);
+  letter-spacing: 0.06em;
+}
+.sig-intake-actions { display: flex; gap: 0.35rem; }
+
+.sig-paste { margin-top: 0.75rem; }
+.sig-paste-input {
+  width: 100%;
+  background: var(--djg-bg);
+  border: 1px solid var(--djg-line);
+  color: var(--djg-text);
+  font-family: var(--djg-mono);
+  font-size: 0.75rem;
+  padding: 0.6rem;
+  border-radius: 2px;
+  resize: vertical;
+}
+.sig-paste-actions { display: flex; gap: 0.4rem; margin-top: 0.5rem; }
+
+/* §7 21-day source-silence notice — deliberately quiet, per "without nagging" */
+.sig-silence {
+  margin: 0.75rem 0;
+  padding: 0.5rem 0.75rem;
+  border-left: 2px solid var(--djg-text-muted);
+  font-family: var(--djg-mono);
+  font-size: 0.7rem;
+  color: var(--djg-text-muted);
+}
+
+/* ── Filters (§9) ────────────────────────────────────────────────────────── */
+
+.sig-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.75rem 0;
+}
+
+/* ── Ranked table (§9) ───────────────────────────────────────────────────── */
+
+.sig-table { font-size: 0.8rem; }
+
+.sig-row {
+  display: grid;
+  /* sym · tags · entry bar · band · badges · exit · sparkline · age */
+  grid-template-columns: 5.5rem 9rem minmax(7rem, 1fr) 5.5rem minmax(6rem, 1.2fr) 4rem 6rem 3.5rem;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.55rem 0.4rem;
+  border-bottom: 1px solid var(--djg-line-soft);
+}
+
+.sig-row-header {
+  font-family: var(--djg-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  color: var(--djg-text-muted);
+  border-bottom: 1px solid var(--djg-line);
+}
+
+.sig-row-body { cursor: pointer; transition: background 120ms; }
+.sig-row-body:hover { background: var(--djg-bg-2); }
+.sig-row-body[data-counter-trend="true"] { border-left: 2px solid var(--djg-warn); padding-left: calc(0.4rem - 2px); }
+.sig-row-body[data-stale="true"] { opacity: 0.55; }
+
+.sig-col-sym { font-family: var(--djg-mono); font-weight: 600; color: var(--djg-text); }
+.sig-col-tags { font-family: var(--djg-mono); font-size: 0.65rem; color: var(--djg-text-muted); }
+.sig-col-age { font-family: var(--djg-mono); font-size: 0.68rem; color: var(--djg-text-muted); text-align: right; }
+
+/* §9: "entry score as segmented component bar" — one segment per §5 component,
+   width proportional to its max, fill proportional to points scored. */
+.sig-bar { display: flex; align-items: center; gap: 0.5rem; }
+.sig-bar-track { display: flex; flex: 1; height: 0.55rem; gap: 1px; background: var(--djg-bg-3); border-radius: 1px; overflow: hidden; }
+.sig-bar-seg { position: relative; background: var(--djg-bg-3); }
+.sig-bar-seg-fill { position: absolute; inset: 0 auto 0 0; background: var(--sig-none); }
+.sig-bar-score { font-family: var(--djg-mono); font-weight: 600; min-width: 1.8rem; text-align: right; }
+
+.sig-row-body[data-band="Prime"] .sig-bar-seg-fill { background: var(--sig-prime); }
+.sig-row-body[data-band="Strong"] .sig-bar-seg-fill { background: var(--sig-strong); }
+.sig-row-body[data-band="Watch"] .sig-bar-seg-fill { background: var(--sig-watch); }
+
+.sig-badge {
+  display: inline-block;
+  font-family: var(--djg-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  padding: 0.15rem 0.4rem;
+  border-radius: 2px;
+  border: 1px solid currentColor;
+}
+.sig-badge[data-band="Prime"] { color: var(--sig-prime); }
+.sig-badge[data-band="Strong"] { color: var(--sig-strong); }
+.sig-badge[data-band="Watch"] { color: var(--sig-watch); }
+.sig-badge[data-band="No signal"] { color: var(--sig-none); }
+
+.sig-col-badges { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.sig-sigbadge {
+  font-family: var(--djg-mono);
+  font-size: 0.6rem;
+  padding: 0.1rem 0.3rem;
+  border-radius: 2px;
+  background: var(--djg-bg-3);
+  color: var(--djg-text-dim);
+  white-space: nowrap;
+}
+.sig-sigbadge[data-kind="td"] { color: var(--djg-accent); }
+.sig-sigbadge[data-kind="regime"] { color: var(--djg-info); }
+.sig-sigbadge[data-kind="ct"] { color: var(--djg-warn); }
+.sig-sigbadge[data-kind="stale"] { color: var(--djg-neg); }
+.sig-sigbadge[data-kind="held"] { color: var(--djg-pos); }
+
+.sig-col-exit { font-family: var(--djg-mono); text-align: right; color: var(--djg-text-muted); }
+.sig-col-exit[data-warn="true"] { color: var(--sig-exit); font-weight: 600; }
+
+.sig-spark { display: block; width: 100%; height: 1.4rem; }
+
+/* ── Row expand / lookup card (§9, §6.3) ─────────────────────────────────── */
+
+.sig-expand {
+  grid-column: 1 / -1;
+  padding: 0.9rem 0.4rem 1.1rem;
+  border-bottom: 1px solid var(--djg-line);
+  background: var(--djg-bg-2);
+}
+
+.sig-lookup {
+  margin: 1rem 0;
+  border: 1px solid var(--djg-accent);
+  border-radius: 3px;
+  background: var(--djg-bg-2);
+  padding: 1rem;
+}
+
+.sig-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+.sig-card-sym { font-family: var(--djg-mono); font-size: 1.15rem; font-weight: 700; color: var(--djg-text); }
+.sig-card-scores { display: flex; gap: 1rem; font-family: var(--djg-mono); font-size: 0.8rem; }
+.sig-card-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+
+.sig-card-grid {
+  display: grid;
+  grid-template-columns: minmax(16rem, 1fr) minmax(14rem, 1fr);
+  gap: 1.25rem;
+}
+@media (max-width: 780px) {
+  .sig-card-grid { grid-template-columns: 1fr; }
+  .sig-row { grid-template-columns: 4.5rem 1fr 4rem; }
+  .sig-col-tags, .sig-col-badges, .sig-col-spark, .sig-col-age, .sig-col-exit { display: none; }
+  .sig-row-header .sig-col-bar { text-align: right; }
+}
+
+.sig-subhead {
+  font-family: var(--djg-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  color: var(--djg-text-muted);
+  margin: 0 0 0.4rem;
+}
+
+/* §5 component breakdown */
+.sig-comp { display: flex; align-items: center; gap: 0.5rem; padding: 0.28rem 0; font-size: 0.75rem; }
+.sig-comp-label { min-width: 7.5rem; color: var(--djg-text-dim); }
+.sig-comp-track { flex: 1; height: 0.4rem; background: var(--djg-bg-3); border-radius: 1px; overflow: hidden; }
+.sig-comp-fill { height: 100%; background: var(--djg-text-dim); }
+.sig-comp-fill[data-scored="true"] { background: var(--djg-accent); }
+.sig-comp-num { font-family: var(--djg-mono); font-size: 0.68rem; color: var(--djg-text-muted); min-width: 3.2rem; text-align: right; }
+.sig-comp-detail { font-size: 0.68rem; color: var(--djg-text-muted); padding: 0 0 0.3rem 8rem; }
+
+/* §6.3 "Firing now" list */
+.sig-firing { list-style: none; padding: 0; margin: 0; }
+.sig-firing li {
+  font-size: 0.75rem;
+  color: var(--djg-text-dim);
+  padding: 0.2rem 0 0.2rem 0.9rem;
+  position: relative;
+}
+.sig-firing li::before { content: "▸"; position: absolute; left: 0; color: var(--djg-accent); }
+.sig-firing-empty { font-size: 0.75rem; color: var(--djg-text-muted); }
+
+/* §6.3 mini chart with 21E/50/200 */
+.sig-chart { width: 100%; height: 8rem; display: block; }
+.sig-chart-legend {
+  display: flex;
+  gap: 0.75rem;
+  font-family: var(--djg-mono);
+  font-size: 0.62rem;
+  color: var(--djg-text-muted);
+  margin-top: 0.3rem;
+}
+.sig-chart-legend span::before { content: "—  "; }
+.sig-legend-price { color: var(--djg-text); }
+.sig-legend-ema { color: var(--djg-accent); }
+.sig-legend-50 { color: var(--djg-info); }
+.sig-legend-200 { color: var(--djg-neg); }
+
+/* §9 signal history + data-freshness line */
+.sig-history { font-family: var(--djg-mono); font-size: 0.68rem; color: var(--djg-text-muted); }
+.sig-history-row { display: flex; gap: 0.6rem; padding: 0.15rem 0; }
+.sig-freshness {
+  font-family: var(--djg-mono);
+  font-size: 0.65rem;
+  color: var(--djg-text-muted);
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--djg-line-soft);
+}
+.sig-freshness[data-stale="true"] { color: var(--djg-warn); }
+
+.sig-warnings { font-size: 0.7rem; color: var(--djg-warn); margin-top: 0.5rem; }
+.sig-warnings div { padding: 0.1rem 0; }
+
+.sig-empty { font-size: 0.8rem; color: var(--djg-text-muted); padding: 1rem 0.4rem; }
+
+/* ── Toast ───────────────────────────────────────────────────────────────── */
+
+.sig-toast {
+  position: fixed;
+  bottom: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--djg-bg-3);
+  border: 1px solid var(--djg-line);
+  color: var(--djg-text);
+  font-family: var(--djg-mono);
+  font-size: 0.75rem;
+  padding: 0.6rem 1rem;
+  border-radius: 3px;
+  z-index: 60;
+}
+
+/* §3.1: TD counts are unverified until the reference-chart reconciliation
+   signs off. Muted amber — a caveat to notice, not an error to alarm at.
+   Remove once SIGNALS_TD_COUNTS_VERIFIED=true. */
+.sig-unverified { color: var(--djg-warn); opacity: 0.85; }
+.sig-unverified-mark {
+  color: var(--djg-warn);
+  font-family: var(--djg-mono);
+  cursor: help;
+}
+.sig-sigbadge[data-kind="td"] { color: var(--djg-accent); }
+
+/* §7.4 [Review] — inspect extracted names before approving a subset. */
+.sig-review {
+  padding: 0.5rem 0 0.25rem;
+  border-top: 1px solid var(--djg-line-soft);
+}
+.sig-review-row {
+  display: grid;
+  grid-template-columns: 1.2rem 4.5rem 5rem 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.3rem 0;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.sig-review-verb {
+  font-family: var(--djg-mono);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  color: var(--djg-text-muted);
+}
+.sig-review-verb[data-action="add"] { color: var(--djg-pos); }
+.sig-review-verb[data-action="exit"] { color: var(--djg-neg); }
+.sig-review-verb[data-action="trim"] { color: var(--djg-warn); }
+.sig-review-sym { font-family: var(--djg-mono); font-weight: 600; color: var(--djg-text); }
+.sig-review-note { color: var(--djg-text-muted); font-size: 0.72rem; }
+
+/* §6.1 autocomplete dropdown — live once a Twelve Data key is configured. */
+.sig-suggestions {
+  position: absolute;
+  z-index: 40;
+  margin-top: 2.6rem;
+  min-width: 20rem;
+  max-width: 26rem;
+  background: var(--djg-bg-3);
+  border: 1px solid var(--djg-line);
+  border-radius: 2px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.sig-suggest {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr auto;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.4rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+.sig-suggest:hover { background: var(--djg-bg-2); }
+.sig-suggest-sym { font-family: var(--djg-mono); font-weight: 600; color: var(--djg-text); }
+.sig-suggest-name { color: var(--djg-text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sig-suggest-cls {
+  font-family: var(--djg-mono);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  color: var(--djg-text-muted);
+}

@@ -5,6 +5,7 @@ June is a small FastAPI app that serves three client-facing dashboards plus an o
 - `Liquidity` — Fed liquidity, repo, credit spreads, dollar
 - `Business Cycle` — ISM, yield curve, employment, cycle phase detector
 - `Steno Mirror` — Steno Signals portfolio ingestion + IBKR alignment engine
+- `Signals` — technical entry/exit scoring (native TD Sequential, regime, RSI/ATR/RVOL) over a watchlist, with research-note intake and low-noise alerts. See `docs/technical-signals-layer-scope.md` and `docs/technical-signals-build-log.md`.
 
 The backend pulls live macro data from `FRED`, `yfinance`, and `Perplexity sonar-pro` when configured, with an official `ISM` fallback path if Perplexity is unavailable. The Steno mirror downloads PDFs from Real Vision (Playwright), extracts portfolios via Claude Vision, classifies Dan's IBKR positions into Steno's themes with a Perplexity + Anthropic dual-AI stage, and produces Buy/Add/Hold/Trim/Sell signals. It can also:
 

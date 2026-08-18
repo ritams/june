@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DJG Advisory · Technical Signals</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/static/djg.css" />
+    <link rel="stylesheet" href="/static/signals.css" />
+    <script src="/static/signals.js" defer></script>
+    <script src="/static/auth-widget.js" defer></script>
+  </head>
+  <body class="djg" data-page="signals">
+    <div class="djg-shell">
+      <!--
+        Technical Signals Layer widget — docs/technical-signals-layer-scope.md §9.
+
+        §9 specifies: "Single embedded component, dark-navy aesthetic (companion
+        HTML mockup is the visual spec)". That mockup was not supplied, so this
+        is built on the existing dashboard's design system (static/djg.css) and
+        its tokens, which keeps the signals page visually continuous with
+        Allocation / Liquidity / Cycle / Steno rather than introducing a second
+        visual language. Swap in the mockup's specifics when it arrives — the
+        markup below is structured to §9's element list, so it should be a CSS
+        exercise rather than a rebuild.
+      -->
+      <header class="djg-topbar">
+        <div class="djg-wordmark">
+          <span class="djg-mark">DJG</span><span class="djg-advisory">ADVISORY</span>
+        </div>
+        <p class="djg-tagline">Technical signals · entry &amp; exit timing</p>
+        <nav class="djg-nav">
+          <a href="/dashboard">Allocation</a>
+          <a href="/liquidity">Liquidity</a>
+          <a href="/business-cycle">Cycle</a>
+          <a href="/steno">Steno Mirror</a>
+          <a class="active" href="/signals">Signals</a>
+        </nav>
+      </header>
+
+      <!-- §9 Header: title, equity/crypto regime chips, last-run stamp, ticker search -->
+      <section class="sig-header">
+        <div class="sig-header-left">
+          <div class="djg-row-label">TECHNICAL SIGNALS</div>
+          <div class="sig-regime-chips" data-regime-chips>
+            <!-- Regime chips are aggregated per asset class from the scored
+                 watchlist; §9 calls for "equity/crypto regime chips". -->
+          </div>
+        </div>
+        <div class="sig-header-right">
+          <form class="sig-search" data-search-form autocomplete="off">
+            <input
+              type="text"
+              class="sig-search-input"
+              data-search-input
+              placeholder="Look up any ticker…"
+              aria-label="Ticker lookup"
+              spellcheck="false"
+            />
+            <button type="submit" class="sig-btn sig-btn-primary">Look up</button>
+          </form>
+          <div class="sig-suggestions" data-suggestions hidden></div>
+          <div class="sig-search-hint" data-search-hint></div>
+          <div class="sig-meta">
+            <span>Last close scored <em data-last-run>—</em></span>
+            <span data-stale-notice class="sig-stale-notice" hidden></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- §7.4 Intake strip — "only visible when pending" -->
+      <section class="sig-intake" data-intake-strip hidden>
+        <header class="sig-intake-head">
+          <span class="sig-intake-label">PENDING FROM SOURCES</span>
+          <button class="sig-btn sig-btn-ghost" data-paste-toggle>Paste a note</button>
+        </header>
+        <div data-intake-list></div>
+        <!-- §7.5 manual intake fallback -->
+        <div class="sig-paste" data-paste-box hidden>
+          <textarea
+            class="sig-paste-input"
+            data-paste-input
+            rows="6"
+            placeholder="Paste note text from any source (Steno, Real Vision, Cowan, anything)…"
+          ></textarea>
+          <div class="sig-paste-actions">
+            <select data-paste-source class="sig-select">
+              <option value="STENO">Steno</option>
+              <option value="RV">Real Vision</option>
+              <option value="COWAN">Cowan</option>
+              <option value="OWN">Own</option>
+            </select>
+            <button class="sig-btn sig-btn-primary" data-paste-submit>Extract names</button>
+            <!-- §7.5: "paste text or upload a PDF from any source" -->
+            <label class="sig-btn sig-btn-ghost" for="sig-pdf-input">Upload PDF</label>
+            <input type="file" id="sig-pdf-input" data-pdf-input accept="application/pdf,.pdf" hidden />
+            <button class="sig-btn sig-btn-ghost" data-paste-cancel>Cancel</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- §7 source-silence notice: "no Steno note received in 3 weeks" -->
+      <section class="sig-silence" data-silence-notice hidden></section>
+
+      <!-- §6.3 lookup result card — rendered on demand, above the table -->
+      <section class="sig-lookup" data-lookup-card hidden></section>
+
+      <!-- §9 Ranked watchlist table -->
+      <section class="djg-panel" aria-label="Ranked watchlist">
+        <header class="djg-panel-head">
+          <span class="djg-panel-num">01</span>
+          <h2>Ranked Watchlist</h2>
+          <span class="djg-panel-aside" data-watchlist-count>0 names</span>
+        </header>
+
+        <!-- §9 Filters: asset class, band, held-only, source -->
+        <div class="sig-filters" data-filters>
+          <select class="sig-select" data-filter-asset>
+            <option value="">All assets</option>
+          </select>
+          <select class="sig-select" data-filter-band>
+            <option value="">All bands</option>
+            <option value="Prime">Prime</option>
+            <option value="Strong">Strong</option>
+            <option value="Watch">Watch</option>
+            <option value="No signal">No signal</option>
+          </select>
+          <select class="sig-select" data-filter-source>
+            <option value="">All sources</option>
+          </select>
+          <label class="sig-check">
+            <input type="checkbox" data-filter-held />
+            <span>Held only</span>
+          </label>
+          <button class="sig-btn sig-btn-ghost" data-refresh>Re-run scoring</button>
+        </div>
+
+        <div class="sig-table" data-watchlist-table>
+          <div class="sig-row sig-row-header">
+            <span class="sig-col-sym">TICKER</span>
+            <span class="sig-col-tags">CLASS · SOURCE</span>
+            <span class="sig-col-bar">ENTRY</span>
+            <span class="sig-col-band">BAND</span>
+            <span class="sig-col-badges">SIGNALS</span>
+            <span class="sig-col-exit">EXIT</span>
+            <span class="sig-col-spark">90D</span>
+            <span class="sig-col-age">LAST</span>
+          </div>
+          <div data-watchlist-body></div>
+        </div>
+        <p class="sig-empty" data-watchlist-empty hidden>
+          No names on the watchlist yet. Look up a ticker above and add it.
+        </p>
+      </section>
+
+      <footer class="djg-footer">
+        <span>Technicals time entries and exits on names selected fundamentally. This does not pick stocks.</span>
+      </footer>
+    </div>
+
+    <div class="sig-toast" data-toast hidden></div>
+  </body>
+</html>

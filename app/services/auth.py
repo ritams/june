@@ -36,6 +36,19 @@ PUBLIC_PREFIXES = (
 # Routes that require a separate Bearer-token (MCP_API_KEY), not the cookie session.
 MCP_PREFIXES = ("/mcp/", "/mcp")
 
+# Routes that authenticate themselves with a provider signature rather than a
+# cookie session, because the caller is a third-party service that cannot hold one.
+#
+# Currently just the inbound-email webhook for the Technical Signals Layer
+# (docs/technical-signals-layer-scope.md §7.2, §10: "The only inbound endpoint is
+# the email provider's signed POST (verify provider signature)").
+#
+# This bypasses the session gate ONLY. The handler must still verify the
+# signature — app/services/signals/intake.py:verify_signature() does, and it
+# fails closed when no secret is configured. Adding a path here without
+# equivalent in-handler verification would leave it genuinely unauthenticated.
+SIGNED_WEBHOOK_PATHS = ("/api/signals/intake/email",)
+
 
 def build_oauth(settings: Settings) -> OAuth | None:
     """Construct the Authlib OAuth client for Google. Returns None if not configured."""
@@ -58,6 +71,16 @@ def _is_public(path: str) -> bool:
 
 def _is_mcp(path: str) -> bool:
     return any(path.startswith(p) for p in MCP_PREFIXES)
+
+
+def _is_signed_webhook(path: str) -> bool:
+    """Exact-match only — a prefix match here would expose sibling routes.
+
+    `/api/signals/intake/email` must not accidentally exempt
+    `/api/signals/intake/pending` or the approve/dismiss endpoints, all of which
+    mutate the watchlist and must stay session-gated.
+    """
+    return path.rstrip("/") in SIGNED_WEBHOOK_PATHS
 
 
 def current_user(request: Request) -> dict[str, Any] | None:
@@ -87,6 +110,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Public routes — always allowed.
         if _is_public(path):
+            return await call_next(request)
+
+        # Signed third-party webhooks — the handler verifies the provider
+        # signature itself (see SIGNED_WEBHOOK_PATHS). Skips the session gate
+        # only; it does not make the route unauthenticated.
+        if _is_signed_webhook(path):
             return await call_next(request)
 
         # MCP routes — Bearer token only (Hermes Agent doesn't carry cookies).

@@ -33,6 +33,8 @@ from app.services import mit_overlay as _mit_overlay
 from app.services import risk_budget as _risk_budget
 from app.services import slr_note as _slr_note
 from app.services import whatif as _whatif
+from app.services.signals.api import router as _signals_router
+from app.services.signals.db import init_db as _init_signals_db
 
 
 settings = get_settings()
@@ -120,6 +122,13 @@ if _mcp_sub_app is not None:
 _oauth = build_oauth(settings)
 register_auth_routes(app, settings, _oauth)
 
+# Technical Signals Layer (docs/technical-signals-layer-scope.md).
+# Routes live under /api/signals/*; the auth middleware above already covers
+# them, which satisfies §10's "the dashboard's own authenticated API".
+# init_db() is idempotent, so calling it at import is safe on every restart.
+_init_signals_db()
+app.include_router(_signals_router)
+
 scheduler = BackgroundScheduler(timezone=settings.app_timezone)
 
 
@@ -160,6 +169,12 @@ def start_scheduler() -> None:
     # IBKR snapshot — refresh once a day at 06:00 London so the mirror has a fresh
     # position view when Steno's 07:00 pull lands. Override via IBKR_REFRESH_TIME=HH:MM.
     _schedule_ibkr_daily(scheduler)
+    # Technical signals — nightly close-based scoring run (§3.3, §10), then the
+    # §8.3 digest 15 minutes later.
+    _schedule_signals_daily(scheduler)
+    _schedule_signals_digest(scheduler)
+    # §7.6 weekly intake digest — Sunday 18:00 UK, silent when nothing is pending.
+    _schedule_intake_digest(scheduler)
     scheduler.start()
 
     # First-run bootstrap — if the local Steno cache is empty (or under-covered)
@@ -178,6 +193,121 @@ def _schedule_steno_daily(sched) -> None:
     except Exception:
         h, m = 7, 0
     sched.add_job(_pipeline.run_pipeline, "cron", hour=h, minute=m, id="steno_daily", replace_existing=True)
+
+
+def _schedule_signals_daily(sched) -> None:
+    """Nightly technical-signals run — scope doc §3.3, §10.
+
+    §3.3: "fetched nightly ~21:30 UK". §10: "daily job 21:30 UK: fetch OHLCV →
+    compute natives → score → persist".
+
+    The time comes from SIGNALS_DAILY_RUN_TIME (see signals/config.py) and is
+    interpreted in `settings.app_timezone`, which is what the scheduler was
+    constructed with. On the EC2 box that is UTC — one hour behind UK time
+    during BST — so set SIGNALS_DAILY_RUN_TIME explicitly for the deployment
+    rather than assuming the default lands at 21:30 London.
+
+    Failures are logged and swallowed: engine.run_daily() already isolates
+    per-symbol errors and returns a partition of what succeeded, so an exception
+    escaping here would mean a bug in the runner itself, not a data problem.
+    """
+    import logging as _logging
+    from app.services.signals.config import DAILY_RUN_TIME
+
+    try:
+        h_str, m_str = DAILY_RUN_TIME.split(":")
+        h, m = int(h_str), int(m_str)
+    except Exception:
+        h, m = 21, 30
+
+    def _job():
+        log = _logging.getLogger("signals.scheduler")
+        try:
+            from app.services.signals import alerts as _alerts
+            from app.services.signals import engine as _engine
+
+            result = _engine.run_daily()
+            log.info(
+                "Signals run: %d scored, %d stale, %d failed, %d skipped",
+                len(result.scored), len(result.stale), len(result.failed), len(result.skipped),
+            )
+            if result.failed:
+                log.warning("Signals run failures: %s", result.failed)
+
+            # §8: evaluate alerts immediately after scoring, on the same bar.
+            # Real-time alerts (§8.3 Prime transitions, §8.4 TD escalations) go
+            # out now; everything else is logged and collected by the 21:45
+            # digest. Wrapped separately so a notification failure never masks a
+            # successful scoring run.
+            try:
+                alert_result = _alerts.run_alert_cycle(telegram_client=telegram_client)
+                log.info("Signals alerts: %s", alert_result)
+            except Exception:
+                log.exception("Signals alert cycle failed (scores are persisted)")
+        except Exception as exc:
+            log.exception("Signals daily run raised: %s", exc)
+
+    sched.add_job(_job, "cron", hour=h, minute=m, id="signals_daily", replace_existing=True)
+
+
+def _schedule_signals_digest(sched) -> None:
+    """The §8.3 daily digest — "One daily digest ~21:45 UK".
+
+    Fifteen minutes after the scoring job by default (see DIGEST_TIME in
+    signals/config.py) so it always reports on fresh scores. Same timezone
+    caveat as the scoring job: set SIGNALS_DIGEST_TIME explicitly in .env.
+    """
+    import logging as _logging
+    from app.services.signals.config import DIGEST_TIME
+
+    try:
+        h_str, m_str = DIGEST_TIME.split(":")
+        h, m = int(h_str), int(m_str)
+    except Exception:
+        h, m = 21, 45
+
+    def _job():
+        log = _logging.getLogger("signals.digest")
+        try:
+            from app.services.signals import alerts as _alerts
+
+            result = _alerts.send_digest(telegram_client=telegram_client)
+            log.info("Signals digest sent=%s", result.get("sent"))
+        except Exception:
+            log.exception("Signals digest failed")
+
+    sched.add_job(_job, "cron", hour=h, minute=m, id="signals_digest", replace_existing=True)
+
+
+def _schedule_intake_digest(sched) -> None:
+    """The §7.6 weekly intake digest — "Sunday 18:00 UK ... only if pending > 0".
+
+    Silence is the expected outcome most weeks; build_intake_digest() returns
+    None when the queue is empty and nothing is sent.
+    """
+    import logging as _logging
+    from app.services.signals.config import INTAKE_DIGEST_DAY, INTAKE_DIGEST_TIME
+
+    try:
+        h_str, m_str = INTAKE_DIGEST_TIME.split(":")
+        h, m = int(h_str), int(m_str)
+    except Exception:
+        h, m = 18, 0
+
+    def _job():
+        log = _logging.getLogger("signals.intake")
+        try:
+            from app.services.signals import intake as _intake
+
+            result = _intake.send_intake_digest(telegram_client=telegram_client)
+            log.info("Intake digest sent=%s", result.get("sent"))
+        except Exception:
+            log.exception("Intake digest failed")
+
+    sched.add_job(
+        _job, "cron", day_of_week=INTAKE_DIGEST_DAY, hour=h, minute=m,
+        id="signals_intake_digest", replace_existing=True,
+    )
 
 
 def _maybe_bootstrap_steno() -> None:
@@ -284,6 +414,12 @@ def business_cycle_page() -> FileResponse:
 @app.get("/steno", include_in_schema=False)
 def steno_page() -> FileResponse:
     return _static_page("steno.html")
+
+
+@app.get("/signals", include_in_schema=False)
+def signals_page() -> FileResponse:
+    """Technical Signals Layer widget — docs/technical-signals-layer-scope.md §9."""
+    return _static_page("signals.html")
 
 
 # ── Steno + IBKR mirror endpoints ──────────────────────────────────────────────
