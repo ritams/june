@@ -356,3 +356,31 @@ def test_corrupt_json_column_degrades_gracefully():
     row = store.watchlist_with_scores()[0]
     assert row["drivers"] == []
     assert row["entry_score"] is not None      # the real columns still work
+
+
+def test_add_to_watchlist_infers_asset_class():
+    """The inference belongs here, not in the API layer.
+
+    add_to_watchlist has three callers — the API, §7.4's intake approval, and
+    test fixtures. With the inference upstream, BTC-USD entered the watchlist
+    tagged "equity" from every path except one. Caught on the production box.
+    """
+    for sym, expected in (("BTC-USD", "crypto"), ("GC=F", "commodity"),
+                          ("EURUSD=X", "fx"), ("^GSPC", "index"), ("AAPL", "equity")):
+        store.add_to_watchlist(sym)
+    got = {r["symbol"]: r["asset_class"] for r in store.list_watchlist()}
+    assert got["BTC-USD"] == "crypto"
+    assert got["GC=F"] == "commodity"
+    assert got["EURUSD=X"] == "fx"
+    assert got["AAPL"] == "equity"
+
+
+def test_explicit_asset_class_overrides_inference():
+    store.add_to_watchlist("SPY", asset_class="etf")
+    assert store.list_watchlist()[0]["asset_class"] == "etf"
+
+
+def test_intake_approval_path_also_gets_inference():
+    """§7.4 approve() calls the store directly — it must infer too."""
+    store.add_to_watchlist("ETH-USD", source_tag="STENO")
+    assert store.list_watchlist()[0]["asset_class"] == "crypto"

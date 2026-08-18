@@ -42,7 +42,7 @@ def _now() -> str:
 def add_to_watchlist(
     symbol: str,
     *,
-    asset_class: str = "equity",
+    asset_class: str | None = None,
     source_tag: str = DEFAULT_SOURCE_TAG,
     notes: str | None = None,
     held: bool = False,
@@ -58,6 +58,12 @@ def add_to_watchlist(
     Re-adding a soft-deleted symbol reactivates it and refreshes its source and
     added_at, which is the behaviour §7.4 needs when a note re-recommends a name
     that was previously removed.
+
+    `asset_class` is inferred from the symbol's shape when omitted. The inference
+    lives here rather than in the API layer because this function has three
+    callers — the API, §7.4's intake approval, and the nightly job's fixtures —
+    and putting it upstream meant `BTC-USD` entered the watchlist tagged
+    "equity" from every path except one. Caught on the production box.
     """
     tag = source_tag.strip().upper()
     if tag not in SOURCE_TAGS:
@@ -66,6 +72,11 @@ def add_to_watchlist(
     sym = symbol.strip().upper()
     if not sym:
         raise ValueError("symbol is required")
+
+    if not asset_class:
+        from app.services.signals.providers import classify_asset
+
+        asset_class = classify_asset(sym)
 
     with connect() as conn:
         conn.execute(

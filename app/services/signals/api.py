@@ -31,12 +31,7 @@ from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 
 from app.services.signals import engine, store
 from app.services.signals.config import HISTORY_BARS, SOURCE_TAGS, TRADINGVIEW_URL_TEMPLATE
-from app.services.signals.providers import (
-    ProviderError,
-    classify_asset,
-    get_provider,
-    get_search_provider,
-)
+from app.services.signals.providers import ProviderError, get_provider, get_search_provider
 
 
 logger = logging.getLogger(__name__)
@@ -82,15 +77,13 @@ def post_watchlist(
     coercion to OWN: mislabelling would misattribute a name to a research
     provider that never recommended it.
 
-    `asset_class` is inferred from the symbol's shape when omitted, rather than
-    defaulting to "equity" — otherwise `GC=F` and `BTC-USD` land on the
-    watchlist labelled as equities and §9's asset-class filter silently lies.
-    Pass it explicitly to override.
+    `asset_class` is inferred from the symbol's shape when omitted (in
+    store.add_to_watchlist, so every caller gets it). Pass it to override.
     """
     try:
         row = store.add_to_watchlist(
             symbol,
-            asset_class=asset_class or classify_asset(symbol),
+            asset_class=asset_class,
             source_tag=source_tag,
             notes=notes,
             held=held,
